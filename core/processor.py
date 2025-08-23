@@ -235,27 +235,28 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
         else:
             # Многоколоночное размещение
             column_width = (page_width - (columns - 1) * 10) / columns
-            questions_per_column = len(questions) // columns + (1 if len(questions) % columns > 0 else 0)
             
             # Массив для отслеживания Y позиций каждой колонки
             column_y_positions = [test_pdf.get_y()] * columns
+            start_y = test_pdf.get_y()
             
             for q_idx, question in enumerate(questions):
                 q_num = q_idx + 1
                 col = q_idx % columns
                 x_pos = test_pdf.l_margin + col * (column_width + 10)
                 
-                # Устанавливаем позицию для текущей колонки
-                test_pdf.set_xy(x_pos, column_y_positions[col])
-                
-                # Проверяем место на странице
-                if column_y_positions[col] > 220:
+                # Проверяем место на странице - используем максимальную Y позицию среди всех колонок
+                max_y = max(column_y_positions)
+                if max_y > 200:  # Уменьшаем порог для лучшего контроля
                     test_pdf.add_page()
                     test_pdf.set_font('Arial', 'B', 16)
                     test_pdf.cell(0, 10, f"Тест - Варіант {variant['variant_number']} (продовження)", ln=True, align='C')
                     test_pdf.ln(10)
                     column_y_positions = [test_pdf.get_y()] * columns
-                    test_pdf.set_xy(x_pos, column_y_positions[col])
+                    start_y = test_pdf.get_y()
+                
+                # Устанавливаем позицию для текущей колонки
+                test_pdf.set_xy(x_pos, column_y_positions[col])
                 
                 test_pdf.set_font('Arial', 'B', 10)
                 question_text = f"{q_num}. {question['question_text']}"
@@ -292,26 +293,33 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
         test_pdf.cell(0, 6, "Таблиця відповідей:", ln=True)
         test_pdf.ln(3)
         
-        # Создаем компактную таблицу ответов
+        # Создаем компактную таблицу ответов с одинаковыми ячейками
         test_pdf.set_font('Arial', '', 9)
-        questions_per_row = 15  # Увеличиваем количество вопросов в строке
+        questions_per_row = 15  # Количество вопросов в строке
         num_questions = len(variant['questions'])
-        cell_width = page_width / questions_per_row if questions_per_row <= num_questions else page_width / num_questions
+        
+        # Фиксированная ширина ячейки для равномерности
+        fixed_cell_width = page_width / questions_per_row
         
         for row_start in range(0, num_questions, questions_per_row):
             questions_in_row = min(questions_per_row, num_questions - row_start)
-            actual_cell_width = page_width / questions_in_row
             
-            # Номера вопросов
+            # Номера вопросов - все ячейки одинакового размера
             test_pdf.set_font('Arial', 'B', 8)
-            for i in range(row_start, row_start + questions_in_row):
-                test_pdf.cell(actual_cell_width, 6, f"№{i+1}", 1, 0, 'C')
+            for i in range(questions_in_row):
+                test_pdf.cell(fixed_cell_width, 6, f"№{row_start + i + 1}", 1, 0, 'C')
+            # Заполняем оставшиеся ячейки пустыми для выравнивания
+            for i in range(questions_in_row, questions_per_row):
+                test_pdf.cell(fixed_cell_width, 6, "", 1, 0, 'C')
             test_pdf.ln()
             
-            # Пустые ячейки для ответов
+            # Пустые ячейки для ответов - все одинакового размера
             test_pdf.set_font('Arial', '', 8)
-            for i in range(row_start, row_start + questions_in_row):
-                test_pdf.cell(actual_cell_width, 8, "", 1, 0, 'C')
+            for i in range(questions_in_row):
+                test_pdf.cell(fixed_cell_width, 8, "", 1, 0, 'C')
+            # Заполняем оставшиеся ячейки пустыми для выравнивания
+            for i in range(questions_in_row, questions_per_row):
+                test_pdf.cell(fixed_cell_width, 8, "", 1, 0, 'C')
             test_pdf.ln()
             test_pdf.ln(2)
     
@@ -538,9 +546,9 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             doc.add_paragraph()  # Пустая строка
             
             # Вопросы с поддержкой колонок
-            columns = max(1, min(3, columns))  # Ограничиваем от 1 до 3 колонок
+            num_columns = max(1, min(3, columns))  # Ограничиваем от 1 до 3 колонок
             
-            if columns == 1:
+            if num_columns == 1:
                 # Обычная компоновка в одну колонку
                 for i, question in enumerate(variant['questions'], 1):
                     # Текст вопроса
@@ -556,10 +564,10 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             else:
                 # Многоколоночная компоновка с использованием таблицы
                 questions = variant['questions']
-                questions_per_column = len(questions) // columns + (1 if len(questions) % columns > 0 else 0)
+                questions_per_column = len(questions) // num_columns + (1 if len(questions) % num_columns > 0 else 0)
                 
                 # Создаем таблицу для колонок
-                table = doc.add_table(rows=1, cols=columns)
+                table = doc.add_table(rows=1, cols=num_columns)
                 table.style = 'Table Grid'
                 
                 # Убираем границы таблицы
@@ -568,7 +576,7 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         cell._element.get_or_add_tcPr().append(parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>'))
                 
                 # Заполняем колонки
-                for col in range(columns):
+                for col in range(num_columns):
                     cell = table.cell(0, col)
                     cell_para = cell.paragraphs[0]
                     cell_para.clear()
@@ -577,7 +585,7 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     end_q = min(start_q + questions_per_column, len(questions))
                     
                     for q_idx in range(start_q, end_q):
-                        q_num = q_idx + 1
+                        q_num = (q_idx - start_q) + 1  # Нумерация относительно начала колонки
                         question = questions[q_idx]
                         
                         # Добавляем вопрос
