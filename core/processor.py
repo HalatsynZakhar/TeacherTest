@@ -514,19 +514,21 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     # Заголовки таблицы
     pdf.set_font('Arial', 'B', 10)
-    pdf.cell(30, 8, "Питання", 1, 0, 'C')
-    pdf.cell(40, 8, "Відповідь учня", 1, 0, 'C')
-    pdf.cell(40, 8, "Правильна відповідь", 1, 0, 'C')
-    pdf.cell(30, 8, "Результат", 1, 0, 'C')
+    pdf.cell(25, 8, "Питання", 1, 0, 'C')
+    pdf.cell(35, 8, "Відповідь учня", 1, 0, 'C')
+    pdf.cell(35, 8, "Правильна відповідь", 1, 0, 'C')
+    pdf.cell(45, 8, "Результат", 1, 0, 'C')
     pdf.ln()
     
     # Строки таблицы
     pdf.set_font('Arial', '', 10)
     for result in check_result['detailed_results']:
-        pdf.cell(30, 8, str(result['question_number']), 1, 0, 'C')
-        pdf.cell(40, 8, str(result['student_answer']), 1, 0, 'C')
-        pdf.cell(40, 8, str(result['correct_answer']), 1, 0, 'C')
-        pdf.cell(30, 8, "✓" if result['is_correct'] else "✗", 1, 0, 'C')
+        pdf.cell(25, 8, str(result['question_number']), 1, 0, 'C')
+        pdf.cell(35, 8, str(result['student_answer']), 1, 0, 'C')
+        pdf.cell(35, 8, str(result['correct_answer']), 1, 0, 'C')
+        # Используем текст вместо символов, которые не поддерживаются шрифтом Arial
+        result_text = "Правильно" if result['is_correct'] else "Неправильно"
+        pdf.cell(45, 8, result_text, 1, 0, 'C')
         pdf.ln()
     
     try:
