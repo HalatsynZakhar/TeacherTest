@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl import load_workbook
 import json
 import traceback
-from fpdf import FPDF
+# from fpdf import FPDF  # Отключено - используем только Word и Excel
 
 # Добавляем корневую папку проекта в PYTHONPATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -26,10 +26,8 @@ from utils.config_manager import get_downloads_folder, ConfigManager
 from core.processor import (
     read_test_excel, 
     generate_test_variants, 
-    create_test_pdf, 
     create_excel_answer_key,
     check_student_answers,
-    create_check_result_pdf,
     create_test_word,
     read_test_word,
     export_answers_to_word
@@ -282,9 +280,7 @@ def generate_tests():
         # Создаем временную папку для выходных файлов
         output_dir = ensure_temp_dir("output_")
         
-        # Создаем PDF файлы
-        test_pdf_path, answers_pdf_path = create_test_pdf(variants, output_dir, st.session_state.columns_count)
-        add_log_message(f"Созданы PDF файлы: тесты и ответы")
+        # PDF файлы отключены - используем только Word и Excel
         
         # Создаем Excel файл-ключ
         excel_key_path = create_excel_answer_key(variants, output_dir)
@@ -300,8 +296,6 @@ def generate_tests():
         
         # Сохраняем пути к файлам
         st.session_state.output_files = {
-            'test_pdf': test_pdf_path,
-            'answers_pdf': answers_pdf_path,
             'excel_key': excel_key_path,
             'test_word': test_word_path,
             'answers_word': answers_word_path
@@ -337,13 +331,10 @@ def check_answers():
             student_answers
         )
         
-        # Создаем PDF с результатом
-        output_dir = ensure_temp_dir("check_")
-        result_pdf_path = create_check_result_pdf(check_result, output_dir)
+        # PDF отключен - используем только Word и Excel
         
         # Сохраняем результат
         st.session_state.check_result = check_result
-        st.session_state.check_result_pdf = result_pdf_path
         
         add_log_message(f"Проверка завершена. Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}", "SUCCESS")
         return True
@@ -457,22 +448,10 @@ def main():
             st.markdown("---")
             st.header("📥 Завантажити результати")
             
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            # Тесты для учеников (PDF)
-            with col1:
-                if os.path.exists(st.session_state.output_files['test_pdf']):
-                    with open(st.session_state.output_files['test_pdf'], "rb") as file:
-                        st.download_button(
-                            label="📄 Тести PDF",
-                            data=file,
-                            file_name=os.path.basename(st.session_state.output_files['test_pdf']),
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
+            col1, col2, col3 = st.columns(3)
             
             # Тесты для учеников (Word)
-            with col2:
+            with col1:
                 if os.path.exists(st.session_state.output_files['test_word']):
                     with open(st.session_state.output_files['test_word'], "rb") as file:
                         st.download_button(
@@ -483,20 +462,8 @@ def main():
                             use_container_width=True
                         )
             
-            # Ответы для учителя
-            with col3:
-                if os.path.exists(st.session_state.output_files['answers_pdf']):
-                    with open(st.session_state.output_files['answers_pdf'], "rb") as file:
-                        st.download_button(
-                            label="📋 Відповіді PDF",
-                            data=file,
-                            file_name=os.path.basename(st.session_state.output_files['answers_pdf']),
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-            
             # Excel ключ
-            with col4:
+            with col2:
                 if os.path.exists(st.session_state.output_files['excel_key']):
                     with open(st.session_state.output_files['excel_key'], "rb") as file:
                         st.download_button(
@@ -508,7 +475,7 @@ def main():
                         )
             
             # Ответы (Word)
-            with col5:
+            with col3:
                 if os.path.exists(st.session_state.output_files['answers_word']):
                     with open(st.session_state.output_files['answers_word'], "rb") as file:
                         st.download_button(
@@ -580,18 +547,7 @@ def main():
             with col4:
                 st.metric("Відсоток", f"{result['score_percentage']:.1f}%")
             
-            # Скачать результат
-            if hasattr(st.session_state, 'check_result_pdf') and os.path.exists(st.session_state.check_result_pdf):
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col2:
-                    with open(st.session_state.check_result_pdf, "rb") as file:
-                        st.download_button(
-                            label="📄 Завантажити результат перевірки",
-                            data=file,
-                            file_name=os.path.basename(st.session_state.check_result_pdf),
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
+            # PDF отключен - используем только Word и Excel
     
     # Журнал событий
     with st.expander("📋 Журнал подій", expanded=False):

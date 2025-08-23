@@ -234,21 +234,13 @@ class TeacherTestApp:
             self.log_message(f"Генерация {self.num_variants.get()} вариантов...")
             variants = processor.generate_test_variants(df, self.num_variants.get())
             
-            # Создание PDF файлов
-            self.log_message("Создание PDF файлов...")
-            test_pdf_path, answers_pdf_path = processor.create_test_pdf(
-                variants, 
-                self.output_folder_path.get(),
-                progress_callback=self.update_progress
-            )
+            # PDF файлы отключены - используем только Word и Excel
             
             # Создание Excel файла-ключа
             self.log_message("Создание Excel файла-ключа...")
             excel_key_path = processor.create_excel_answer_key(variants, self.output_folder_path.get())
             
             self.log_message(f"Готово! Созданы файлы:")
-            self.log_message(f"- Тесты для учеников: {test_pdf_path}")
-            self.log_message(f"- Ответы для учителя: {answers_pdf_path}")
             self.log_message(f"- Excel ключ: {excel_key_path}")
             
             self.status_var.set("Генерация завершена успешно")
@@ -314,11 +306,7 @@ class TeacherTestApp:
                 student_answers
             )
             
-            # Создание PDF с результатом
-            result_pdf_path = processor.create_check_result_pdf(
-                check_result,
-                self.output_folder_path.get()
-            )
+            # PDF отключен - используем только Word и Excel
             
             # Вывод результатов
             self.log_message(f"Результат проверки:")
@@ -326,7 +314,7 @@ class TeacherTestApp:
             self.log_message(f"- Всего вопросов: {check_result['total_questions']}")
             self.log_message(f"- Правильных ответов: {check_result['correct_answers']}")
             self.log_message(f"- Процент: {check_result['score_percentage']:.1f}%")
-            self.log_message(f"- Результат сохранен в: {result_pdf_path}")
+            # PDF отключен - используем только Word и Excel
             
             self.status_var.set("Проверка завершена")
             
@@ -336,7 +324,7 @@ class TeacherTestApp:
                 f"Вариант: {check_result['variant_number']}\n"
                 f"Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}\n"
                 f"Процент: {check_result['score_percentage']:.1f}%\n\n"
-                f"Результат сохранен в: {result_pdf_path}"
+                "PDF отключен - используем только Word и Excel"
             )
             
             self.root.after(0, lambda: messagebox.showinfo("Результат проверки", result_text))
