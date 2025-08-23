@@ -28,6 +28,8 @@ from core.processor import (
     generate_test_variants, 
     create_excel_answer_key,
     check_student_answers,
+    create_check_result_pdf,
+    create_check_result_word,
     create_test_word,
     read_test_word,
     export_answers_to_word
@@ -331,10 +333,21 @@ def check_answers():
             student_answers
         )
         
-        # PDF отключен - используем только Word и Excel
+        # Создаем отчеты с результатами
+        output_dir = get_downloads_folder()
         
-        # Сохраняем результат
+        # Создаем PDF отчет
+        pdf_report_path = create_check_result_pdf(check_result, output_dir)
+        
+        # Создаем Word отчет
+        word_report_path = create_check_result_word(check_result, output_dir)
+        
+        # Сохраняем результат и пути к отчетам
         st.session_state.check_result = check_result
+        st.session_state.check_reports = {
+            'pdf_report': pdf_report_path,
+            'word_report': word_report_path
+        }
         
         add_log_message(f"Проверка завершена. Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}", "SUCCESS")
         return True
@@ -547,7 +560,36 @@ def main():
             with col4:
                 st.metric("Відсоток", f"{result['score_percentage']:.1f}%")
             
-            # PDF отключен - используем только Word и Excel
+            # Кнопки для скачивания отчетов
+            if hasattr(st.session_state, 'check_reports') and st.session_state.check_reports:
+                st.markdown("---")
+                st.subheader("📥 Завантажити звіти")
+                
+                col1, col2 = st.columns(2)
+                
+                # PDF отчет
+                with col1:
+                    if os.path.exists(st.session_state.check_reports['pdf_report']):
+                        with open(st.session_state.check_reports['pdf_report'], "rb") as file:
+                            st.download_button(
+                                label="📄 Звіт PDF",
+                                data=file,
+                                file_name=os.path.basename(st.session_state.check_reports['pdf_report']),
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                
+                # Word отчет
+                with col2:
+                    if os.path.exists(st.session_state.check_reports['word_report']):
+                        with open(st.session_state.check_reports['word_report'], "rb") as file:
+                            st.download_button(
+                                label="📝 Звіт Word",
+                                data=file,
+                                file_name=os.path.basename(st.session_state.check_reports['word_report']),
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True
+                            )
     
     # Журнал событий
     with st.expander("📋 Журнал подій", expanded=False):

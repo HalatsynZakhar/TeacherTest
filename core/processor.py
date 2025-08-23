@@ -465,6 +465,22 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         Путь к созданному PDF файлу
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Нормализуем путь и проверяем доступность
+    try:
+        output_dir = os.path.normpath(output_dir)
+        # Если это сетевой путь и он недоступен, используем локальную папку
+        if output_dir.startswith('\\\\') and not os.path.exists(output_dir):
+            output_dir = os.path.expanduser('~/Desktop')
+            log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
+        
+        # Создаем папку если она не существует
+        os.makedirs(output_dir, exist_ok=True)
+        
+    except Exception as e:
+        log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем текущую папку.")
+        output_dir = os.getcwd()
+    
     pdf_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.pdf")
     
     pdf = FPDF()
@@ -513,10 +529,180 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         pdf.cell(30, 8, "✓" if result['is_correct'] else "✗", 1, 0, 'C')
         pdf.ln()
     
-    pdf.output(pdf_path)
+    try:
+        pdf.output(pdf_path)
+        log.info(f"Создан PDF с результатами проверки: {pdf_path}")
+        return pdf_path
+    except Exception as e:
+        # Если ошибка связана с путем, пробуем использовать текущую папку
+        if 'Invalid argument' in str(e) or 'path' in str(e).lower():
+            try:
+                output_dir = os.getcwd()
+                log.warning(f"Ошибка с путем PDF, используем текущую папку: {output_dir}")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                pdf_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.pdf")
+                pdf.output(pdf_path)
+                log.info(f"Создан PDF с результатами проверки (fallback): {pdf_path}")
+                return pdf_path
+            except Exception as fallback_error:
+                log.error(f"Ошибка при создании PDF отчета (fallback): {fallback_error}")
+                raise
+        else:
+            log.error(f"Ошибка при создании PDF отчета: {e}")
+            raise
+
+def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> str:
+    """
+    Создает Word файл с результатами проверки.
     
-    log.info(f"Создан PDF с результатами проверки: {pdf_path}")
-    return pdf_path
+    Args:
+        check_result: Результаты проверки
+        output_dir: Папка для сохранения файла
+        
+    Returns:
+        Путь к созданному Word файлу
+    """
+    try:
+        # Нормализуем путь и проверяем доступность
+        output_dir = os.path.normpath(output_dir)
+        # Если это сетевой путь и он недоступен, используем локальную папку
+        if output_dir.startswith('\\\\') and not os.path.exists(output_dir):
+            output_dir = os.path.expanduser('~/Desktop')
+            log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        word_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.docx")
+        
+        doc = Document()
+        
+        # Заголовок
+        heading = doc.add_heading('Результат перевірки тесту', level=1)
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()  # Пустая строка
+        
+        # Основная информация
+        info_para = doc.add_paragraph()
+        info_para.add_run('Основна інформація:').bold = True
+        
+        info_texts = [
+            f"Варіант: {check_result['variant_number']}",
+            f"Всього питань: {check_result['total_questions']}",
+            f"Правильних відповідей: {check_result['correct_answers']}",
+            f"Відсоток: {check_result['score_percentage']:.1f}%"
+        ]
+        
+        for info_text in info_texts:
+            doc.add_paragraph(info_text, style='List Bullet')
+        
+        doc.add_paragraph()  # Пустая строка
+        
+        # Детальные результаты
+        details_para = doc.add_paragraph()
+        details_para.add_run('Детальні результати:').bold = True
+        
+        # Создаем таблицу
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+        
+        # Заголовки таблицы
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Питання'
+        hdr_cells[1].text = 'Відповідь учня'
+        hdr_cells[2].text = 'Правильна відповідь'
+        hdr_cells[3].text = 'Результат'
+        
+        # Делаем заголовки жирными
+        for cell in hdr_cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+        
+        # Добавляем строки с результатами
+        for result in check_result['detailed_results']:
+            row_cells = table.add_row().cells
+            row_cells[0].text = str(result['question_number'])
+            row_cells[1].text = str(result['student_answer'])
+            row_cells[2].text = str(result['correct_answer'])
+            row_cells[3].text = "✓" if result['is_correct'] else "✗"
+        
+        doc.save(word_path)
+        log.info(f"Создан Word документ с результатами проверки: {word_path}")
+        return word_path
+        
+    except Exception as e:
+        # Если ошибка связана с путем, пробуем использовать текущую папку
+        if 'Invalid argument' in str(e) or 'path' in str(e).lower():
+            try:
+                output_dir = os.getcwd()
+                log.warning(f"Ошибка с путем, используем текущую папку: {output_dir}")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                word_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.docx")
+                
+                doc = Document()
+                
+                # Заголовок
+                heading = doc.add_heading('Результат перевірки тесту', level=1)
+                heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                doc.add_paragraph()  # Пустая строка
+                
+                # Основная информация
+                info_para = doc.add_paragraph()
+                info_para.add_run('Основна інформація:').bold = True
+                
+                info_texts = [
+                    f"Варіант: {check_result['variant_number']}",
+                    f"Всього питань: {check_result['total_questions']}",
+                    f"Правильних відповідей: {check_result['correct_answers']}",
+                    f"Відсоток: {check_result['score_percentage']:.1f}%"
+                ]
+                
+                for info_text in info_texts:
+                    doc.add_paragraph(info_text, style='List Bullet')
+                
+                doc.add_paragraph()  # Пустая строка
+                
+                # Детальные результаты
+                details_para = doc.add_paragraph()
+                details_para.add_run('Детальні результати:').bold = True
+                
+                # Создаем таблицу
+                table = doc.add_table(rows=1, cols=4)
+                table.style = 'Table Grid'
+                
+                # Заголовки таблицы
+                hdr_cells = table.rows[0].cells
+                hdr_cells[0].text = 'Питання'
+                hdr_cells[1].text = 'Відповідь учня'
+                hdr_cells[2].text = 'Правильна відповідь'
+                hdr_cells[3].text = 'Результат'
+                
+                # Делаем заголовки жирными
+                for cell in hdr_cells:
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.bold = True
+                
+                # Добавляем строки с результатами
+                for result in check_result['detailed_results']:
+                    row_cells = table.add_row().cells
+                    row_cells[0].text = str(result['question_number'])
+                    row_cells[1].text = str(result['student_answer'])
+                    row_cells[2].text = str(result['correct_answer'])
+                    row_cells[3].text = "✓" if result['is_correct'] else "✗"
+                
+                doc.save(word_path)
+                log.info(f"Создан Word документ с результатами проверки (fallback): {word_path}")
+                return word_path
+                
+            except Exception as fallback_error:
+                log.error(f"Ошибка при создании Word отчета (fallback): {fallback_error}")
+                raise
+        else:
+            log.error(f"Ошибка при создании Word отчета: {e}")
+            raise
 
 
 def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1) -> str:

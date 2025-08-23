@@ -306,7 +306,16 @@ class TeacherTestApp:
                 student_answers
             )
             
-            # PDF отключен - используем только Word и Excel
+            # Создаем отчеты с результатами
+            self.log_message("Создание отчетов...")
+            
+            # Создаем PDF отчет
+            pdf_report_path = processor.create_check_result_pdf(check_result, self.output_folder_path.get())
+            self.log_message(f"PDF отчет создан: {pdf_report_path}")
+            
+            # Создаем Word отчет
+            word_report_path = processor.create_check_result_word(check_result, self.output_folder_path.get())
+            self.log_message(f"Word отчет создан: {word_report_path}")
             
             # Вывод результатов
             self.log_message(f"Результат проверки:")
@@ -314,7 +323,6 @@ class TeacherTestApp:
             self.log_message(f"- Всего вопросов: {check_result['total_questions']}")
             self.log_message(f"- Правильных ответов: {check_result['correct_answers']}")
             self.log_message(f"- Процент: {check_result['score_percentage']:.1f}%")
-            # PDF отключен - используем только Word и Excel
             
             self.status_var.set("Проверка завершена")
             
@@ -324,7 +332,9 @@ class TeacherTestApp:
                 f"Вариант: {check_result['variant_number']}\n"
                 f"Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}\n"
                 f"Процент: {check_result['score_percentage']:.1f}%\n\n"
-                "PDF отключен - используем только Word и Excel"
+                f"Созданы отчеты:\n"
+                f"- PDF: {os.path.basename(pdf_report_path)}\n"
+                f"- Word: {os.path.basename(word_report_path)}"
             )
             
             self.root.after(0, lambda: messagebox.showinfo("Результат проверки", result_text))
