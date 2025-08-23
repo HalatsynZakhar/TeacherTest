@@ -29,7 +29,10 @@ from core.processor import (
     create_test_pdf, 
     create_excel_answer_key,
     check_student_answers,
-    create_check_result_pdf
+    create_check_result_pdf,
+    create_test_word,
+    read_test_word,
+    export_answers_to_word
 )
 
 # Настройка логирования
@@ -122,7 +125,7 @@ cm = st.session_state.config_manager
 
 # Настройка параметров приложения
 st.set_page_config(
-    page_title="TeacherTest - Генератор тестов",
+    page_title="TeacherTest - Генератор тестів",
     page_icon="📝",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -194,6 +197,8 @@ if 'variant_number' not in st.session_state:
     st.session_state.variant_number = 1
 if 'student_answers' not in st.session_state:
     st.session_state.student_answers = ""
+if 'columns_count' not in st.session_state:
+    st.session_state.columns_count = 1
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -217,8 +222,8 @@ def add_log_message(message, level="INFO"):
     else:
         log.info(message)
 
-def load_excel_file(uploaded_file_arg=None):
-    """Загрузка и обработка Excel файла с вопросами"""
+def load_file(uploaded_file_arg=None):
+    """Загрузка и обработка Excel или Word файла с вопросами"""
     try:
         if uploaded_file_arg is None:
             uploaded_file_arg = st.session_state.get('temp_file_path')
@@ -230,8 +235,20 @@ def load_excel_file(uploaded_file_arg=None):
         
         add_log_message(f"Загрузка файла: {os.path.basename(uploaded_file_arg)}")
         
-        # Читаем Excel файл с вопросами
-        df = read_test_excel(uploaded_file_arg)
+        # Определяем тип файла по расширению
+        file_extension = os.path.splitext(uploaded_file_arg)[1].lower()
+        
+        if file_extension in ['.xlsx', '.xls']:
+            # Читаем Excel файл с вопросами
+            df = read_test_excel(uploaded_file_arg)
+        elif file_extension in ['.docx', '.doc']:
+            # Читаем Word файл с вопросами
+            df = read_test_word(uploaded_file_arg)
+        else:
+            st.session_state.df = None
+            st.session_state.processing_error = "Неподдерживаемый формат файла. Используйте Excel (.xlsx, .xls) или Word (.docx, .doc)"
+            add_log_message("Неподдерживаемый формат файла", "ERROR")
+            return
         
         if df.empty:
             st.session_state.df = None
@@ -266,18 +283,28 @@ def generate_tests():
         output_dir = ensure_temp_dir("output_")
         
         # Создаем PDF файлы
-        test_pdf_path, answers_pdf_path = create_test_pdf(variants, output_dir)
+        test_pdf_path, answers_pdf_path = create_test_pdf(variants, output_dir, st.session_state.columns_count)
         add_log_message(f"Созданы PDF файлы: тесты и ответы")
         
         # Создаем Excel файл-ключ
         excel_key_path = create_excel_answer_key(variants, output_dir)
         add_log_message(f"Создан Excel файл-ключ")
         
+        # Создаем Word файл с тестами
+        test_word_path = create_test_word(variants, output_dir, st.session_state.columns_count)
+        add_log_message(f"Создан Word файл с тестами")
+        
+        # Создаем Word файл с ответами
+        answers_word_path = export_answers_to_word(variants, output_dir)
+        add_log_message(f"Создан Word файл с ответами")
+        
         # Сохраняем пути к файлам
         st.session_state.output_files = {
             'test_pdf': test_pdf_path,
             'answers_pdf': answers_pdf_path,
-            'excel_key': excel_key_path
+            'excel_key': excel_key_path,
+            'test_word': test_word_path,
+            'answers_word': answers_word_path
         }
         
         add_log_message("Генерация тестов завершена успешно", "SUCCESS")
@@ -329,35 +356,42 @@ def check_answers():
 
 # Основной интерфейс
 def main():
-    st.title("📝 TeacherTest - Генератор тестов для учеников")
+    st.title("📝 TeacherTest - Генератор тестів для учнів")
     st.markdown("---")
     
     # Боковая панель с настройками
     with st.sidebar:
-        st.header("⚙️ Настройки")
+        st.header("⚙️ Налаштування")
         
         # Выбор режима работы
         st.session_state.mode = st.radio(
-            "Режим работы:",
+            "Режим роботи:",
             [1, 2],
-            format_func=lambda x: "Генерация тестов" if x == 1 else "Проверка работ",
+            format_func=lambda x: "Генерація тестів" if x == 1 else "Перевірка робіт",
             index=st.session_state.mode - 1
         )
         
         st.markdown("---")
         
         if st.session_state.mode == 1:
-            st.subheader("Настройки генерации")
+            st.subheader("Налаштування генерації")
             st.session_state.variants_count = st.number_input(
-                "Количество вариантов:",
+                "Кількість варіантів:",
                 min_value=1,
                 max_value=100,
                 value=st.session_state.variants_count
             )
+            
+            st.session_state.columns_count = st.selectbox(
+                "Кількість колонок для питань:",
+                options=[1, 2, 3],
+                index=st.session_state.columns_count - 1,
+                help="Виберіть кількість колонок для розміщення питань у PDF та Word документах"
+            )
         else:
-            st.subheader("Настройки проверки")
+            st.subheader("Налаштування перевірки")
             st.session_state.variant_number = st.number_input(
-                "Номер варианта ученика:",
+                "Номер варіанта учня:",
                 min_value=1,
                 max_value=100,
                 value=st.session_state.variant_number
@@ -366,13 +400,13 @@ def main():
     # Основной контент
     if st.session_state.mode == 1:
         # Режим 1: Генерация тестов
-        st.header("🎯 Режим 1: Генерация тестов")
+        st.header("🎯 Режим 1: Генерація тестів")
         
-        # Загрузка Excel файла с вопросами
+        # Загрузка Excel или Word файла с вопросами
         uploaded_file = st.file_uploader(
-            "Выберите Excel файл с вопросами",
-            type=["xlsx", "xls"],
-            help="Файл должен содержать: столбец с вопросами, столбец с номером правильного ответа, столбцы с вариантами ответов"
+            "Оберіть Excel або Word файл з питаннями",
+            type=["xlsx", "xls", "docx", "doc"],
+            help="Excel файл повинен містити: стовпець з питаннями, стовпець з номером правильної відповіді, стовпці з варіантами відповідей. Word файл повинен містити питання у форматі: '1. Питання' з варіантами відповідей '1) Варіант'"
         )
         
         if uploaded_file is not None:
@@ -393,26 +427,26 @@ def main():
                 with open(temp_file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 st.session_state.temp_file_path = temp_file_path
-                load_excel_file()
+                load_file()
             
             # Отображение информации о файле
             if st.session_state.df is not None:
-                st.success(f"✅ Файл загружен: {uploaded_file.name}")
-                st.info(f"📊 Найдено вопросов: {len(st.session_state.df)}")
+                st.success(f"✅ Файл завантажено: {uploaded_file.name}")
+                st.info(f"📊 Знайдено питань: {len(st.session_state.df)}")
                 
                 # Предпросмотр данных
-                with st.expander("👀 Предпросмотр данных"):
+                with st.expander("👀 Попередній перегляд даних"):
                     st.dataframe(st.session_state.df.head(10), use_container_width=True)
                 
                 # Кнопка генерации
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
-                    if st.button("🚀 Сгенерировать тесты", type="primary", use_container_width=True):
-                        with st.spinner("Генерация тестов..."):
+                    if st.button("🚀 Згенерувати тести", type="primary", use_container_width=True):
+                        with st.spinner("Генерація тестів..."):
                             success = generate_tests()
                         
                         if success:
-                            st.success("✅ Тесты успешно сгенерированы!")
+                            st.success("✅ Тести успішно згенеровано!")
                             st.rerun()
             
             elif st.session_state.processing_error:
@@ -421,28 +455,40 @@ def main():
         # Отображение результатов генерации
         if st.session_state.output_files:
             st.markdown("---")
-            st.header("📥 Скачать результаты")
+            st.header("📥 Завантажити результати")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4, col5 = st.columns(5)
             
-            # Тесты для учеников
+            # Тесты для учеников (PDF)
             with col1:
                 if os.path.exists(st.session_state.output_files['test_pdf']):
                     with open(st.session_state.output_files['test_pdf'], "rb") as file:
                         st.download_button(
-                            label="📄 Тесты для учеников",
+                            label="📄 Тести PDF",
                             data=file,
                             file_name=os.path.basename(st.session_state.output_files['test_pdf']),
                             mime="application/pdf",
                             use_container_width=True
                         )
             
-            # Ответы для учителя
+            # Тесты для учеников (Word)
             with col2:
+                if os.path.exists(st.session_state.output_files['test_word']):
+                    with open(st.session_state.output_files['test_word'], "rb") as file:
+                        st.download_button(
+                            label="📝 Тести Word",
+                            data=file,
+                            file_name=os.path.basename(st.session_state.output_files['test_word']),
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+            
+            # Ответы для учителя
+            with col3:
                 if os.path.exists(st.session_state.output_files['answers_pdf']):
                     with open(st.session_state.output_files['answers_pdf'], "rb") as file:
                         st.download_button(
-                            label="📋 Ответы для учителя",
+                            label="📋 Відповіді PDF",
                             data=file,
                             file_name=os.path.basename(st.session_state.output_files['answers_pdf']),
                             mime="application/pdf",
@@ -450,7 +496,7 @@ def main():
                         )
             
             # Excel ключ
-            with col3:
+            with col4:
                 if os.path.exists(st.session_state.output_files['excel_key']):
                     with open(st.session_state.output_files['excel_key'], "rb") as file:
                         st.download_button(
@@ -460,16 +506,28 @@ def main():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
+            
+            # Ответы (Word)
+            with col5:
+                if os.path.exists(st.session_state.output_files['answers_word']):
+                    with open(st.session_state.output_files['answers_word'], "rb") as file:
+                        st.download_button(
+                            label="📋 Відповіді Word",
+                            data=file,
+                            file_name=os.path.basename(st.session_state.output_files['answers_word']),
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
     
     else:
         # Режим 2: Проверка работ
-        st.header("✅ Режим 2: Проверка работ")
+        st.header("✅ Режим 2: Перевірка робіт")
         
         # Загрузка файла-ключа
         answer_key_file = st.file_uploader(
-            "Выберите Excel файл-ключ",
+            "Оберіть Excel файл-ключ",
             type=["xlsx", "xls"],
-            help="Файл-ключ, созданный при генерации тестов"
+            help="Файл-ключ, створений при генерації тестів"
         )
         
         if answer_key_file is not None:
@@ -479,48 +537,48 @@ def main():
             with open(key_file_path, "wb") as f:
                 f.write(answer_key_file.getbuffer())
             st.session_state.answer_key_file = key_file_path
-            st.success(f"✅ Файл-ключ загружен: {answer_key_file.name}")
+            st.success(f"✅ Файл-ключ завантажено: {answer_key_file.name}")
         
         # Ввод ответов ученика
         if st.session_state.answer_key_file:
             st.session_state.student_answers = st.text_input(
-                "Ответы ученика (через запятую):",
+                "Відповіді учня (через кому):",
                 value=st.session_state.student_answers,
-                placeholder="Например: 1,3,2,4,1,2",
-                help="Введите номера ответов ученика через запятую"
+                placeholder="Наприклад: 1,3,2,4,1,2",
+                help="Введіть номери відповідей учня через кому"
             )
             
             # Кнопка проверки
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("🔍 Проверить работу", type="primary", use_container_width=True):
+                if st.button("🔍 Перевірити роботу", type="primary", use_container_width=True):
                     if st.session_state.student_answers.strip():
-                        with st.spinner("Проверка ответов..."):
+                        with st.spinner("Перевірка відповідей..."):
                             success = check_answers()
                         
                         if success:
-                            st.success("✅ Проверка завершена!")
+                            st.success("✅ Перевірка завершена!")
                             st.rerun()
                     else:
-                        st.error("❌ Введите ответы ученика")
+                        st.error("❌ Введіть відповіді учня")
         
         # Отображение результатов проверки
         if hasattr(st.session_state, 'check_result') and st.session_state.check_result:
             st.markdown("---")
-            st.header("📊 Результаты проверки")
+            st.header("📊 Результати перевірки")
             
             result = st.session_state.check_result
             
             # Метрики
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Вариант", result['variant_number'])
+                st.metric("Варіант", result['variant_number'])
             with col2:
-                st.metric("Всего вопросов", result['total_questions'])
+                st.metric("Всього питань", result['total_questions'])
             with col3:
-                st.metric("Правильных ответов", result['correct_answers'])
+                st.metric("Правильних відповідей", result['correct_answers'])
             with col4:
-                st.metric("Процент", f"{result['score_percentage']:.1f}%")
+                st.metric("Відсоток", f"{result['score_percentage']:.1f}%")
             
             # Скачать результат
             if hasattr(st.session_state, 'check_result_pdf') and os.path.exists(st.session_state.check_result_pdf):
@@ -528,7 +586,7 @@ def main():
                 with col2:
                     with open(st.session_state.check_result_pdf, "rb") as file:
                         st.download_button(
-                            label="📄 Скачать результат проверки",
+                            label="📄 Завантажити результат перевірки",
                             data=file,
                             file_name=os.path.basename(st.session_state.check_result_pdf),
                             mime="application/pdf",
@@ -536,7 +594,7 @@ def main():
                         )
     
     # Журнал событий
-    with st.expander("📋 Журнал событий", expanded=False):
+    with st.expander("📋 Журнал подій", expanded=False):
         if st.session_state.log_messages:
             for log_msg in st.session_state.log_messages[-20:]:  # Показываем последние 20 сообщений
                 if "ERROR" in log_msg:
@@ -548,7 +606,7 @@ def main():
                 else:
                     st.info(log_msg)
         else:
-            st.info("Журнал пуст")
+            st.info("Журнал порожній")
 
 if __name__ == "__main__":
     main()
