@@ -558,7 +558,8 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     # Варианты ответов
                     for j, option in enumerate(question['options'], 1):
                         option_para = doc.add_paragraph(f"   {j}) {option}")
-                        option_para.style = 'List Number'
+                        # Убираем автоматическую нумерацию стиля, чтобы избежать глобального счетчика
+                        option_para.style = 'Normal'
                     
                     doc.add_paragraph()  # Пустая строка между вопросами
             else:
