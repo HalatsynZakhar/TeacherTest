@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 import textwrap
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 
@@ -496,11 +496,14 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     # Основная информация
     pdf.set_font('Arial', 'B', 12)
+    # Расчет баллов в 12-балльной системе
+    twelve_point_score = (check_result['score_percentage'] / 100) * 12
     info_texts = [
         f"Варіант: {check_result['variant_number']}",
         f"Всього питань: {check_result['total_questions']}",
         f"Правильних відповідей: {check_result['correct_answers']}",
-        f"Відсоток: {check_result['score_percentage']:.1f}%"
+        f"Відсоток: {check_result['score_percentage']:.1f}%",
+        f"Бали (12-бальна система): {twelve_point_score:.2f}"
     ]
     
     for info_text in info_texts:
@@ -514,21 +517,26 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     # Заголовки таблицы
     pdf.set_font('Arial', 'B', 10)
-    pdf.cell(25, 8, "Питання", 1, 0, 'C')
-    pdf.cell(35, 8, "Відповідь учня", 1, 0, 'C')
-    pdf.cell(35, 8, "Правильна відповідь", 1, 0, 'C')
-    pdf.cell(45, 8, "Результат", 1, 0, 'C')
+    pdf.cell(20, 8, "Питання", 1, 0, 'C')
+    pdf.cell(30, 8, "Відповідь учня", 1, 0, 'C')
+    pdf.cell(45, 8, "Правильна відповідь", 1, 0, 'C')
+    pdf.cell(30, 8, "Бали", 1, 0, 'C')
+    pdf.cell(35, 8, "Результат", 1, 0, 'C')
     pdf.ln()
     
     # Строки таблицы
     pdf.set_font('Arial', '', 10)
+    points_per_question = 12 / check_result['total_questions']
     for result in check_result['detailed_results']:
-        pdf.cell(25, 8, str(result['question_number']), 1, 0, 'C')
-        pdf.cell(35, 8, str(result['student_answer']), 1, 0, 'C')
-        pdf.cell(35, 8, str(result['correct_answer']), 1, 0, 'C')
+        pdf.cell(20, 8, str(result['question_number']), 1, 0, 'C')
+        pdf.cell(30, 8, str(result['student_answer']), 1, 0, 'C')
+        pdf.cell(45, 8, str(result['correct_answer']), 1, 0, 'C')
+        # Баллы за задание (пропорционально 12-балльной системе)
+        points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
+        pdf.cell(30, 8, points, 1, 0, 'C')
         # Используем текст вместо символов, которые не поддерживаются шрифтом Arial
         result_text = "Правильно" if result['is_correct'] else "Неправильно"
-        pdf.cell(45, 8, result_text, 1, 0, 'C')
+        pdf.cell(35, 8, result_text, 1, 0, 'C')
         pdf.ln()
     
     try:
@@ -588,11 +596,14 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         info_para = doc.add_paragraph()
         info_para.add_run('Основна інформація:').bold = True
         
+        # Расчет баллов в 12-балльной системе
+        twelve_point_score = (check_result['score_percentage'] / 100) * 12
         info_texts = [
             f"Варіант: {check_result['variant_number']}",
             f"Всього питань: {check_result['total_questions']}",
             f"Правильних відповідей: {check_result['correct_answers']}",
-            f"Відсоток: {check_result['score_percentage']:.1f}%"
+            f"Відсоток: {check_result['score_percentage']:.1f}%",
+            f"Бали (12-бальна система): {twelve_point_score:.2f}"
         ]
         
         for info_text in info_texts:
@@ -605,15 +616,23 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         details_para.add_run('Детальні результати:').bold = True
         
         # Создаем таблицу
-        table = doc.add_table(rows=1, cols=4)
+        table = doc.add_table(rows=1, cols=5)
         table.style = 'Table Grid'
+        
+        # Настраиваем ширину колонок
+        table.columns[0].width = Inches(1.0)  # Питання
+        table.columns[1].width = Inches(1.5)  # Відповідь учня
+        table.columns[2].width = Inches(1.5)  # Правильна відповідь
+        table.columns[3].width = Inches(0.8)  # Бали
+        table.columns[4].width = Inches(1.8)  # Результат (увеличена для предотвращения переносов)
         
         # Заголовки таблицы
         hdr_cells = table.rows[0].cells
         hdr_cells[0].text = 'Питання'
         hdr_cells[1].text = 'Відповідь учня'
         hdr_cells[2].text = 'Правильна відповідь'
-        hdr_cells[3].text = 'Результат'
+        hdr_cells[3].text = 'Бали'
+        hdr_cells[4].text = 'Результат'
         
         # Делаем заголовки жирными
         for cell in hdr_cells:
@@ -622,12 +641,25 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     run.bold = True
         
         # Добавляем строки с результатами
+        points_per_question = 12 / check_result['total_questions']
         for result in check_result['detailed_results']:
             row_cells = table.add_row().cells
             row_cells[0].text = str(result['question_number'])
             row_cells[1].text = str(result['student_answer'])
             row_cells[2].text = str(result['correct_answer'])
-            row_cells[3].text = "✓" if result['is_correct'] else "✗"
+            # Баллы за задание
+            points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
+            row_cells[3].text = points
+            
+            # Результат с цветными символами
+            result_paragraph = row_cells[4].paragraphs[0]
+            result_paragraph.clear()
+            if result['is_correct']:
+                run = result_paragraph.add_run("✓ Правильно")
+                run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый цвет
+            else:
+                run = result_paragraph.add_run("✗ Неправильно")
+                run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
         
         doc.save(word_path)
         log.info(f"Создан Word документ с результатами проверки: {word_path}")
@@ -654,11 +686,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 info_para = doc.add_paragraph()
                 info_para.add_run('Основна інформація:').bold = True
                 
+                # Расчет балла в 12-балльной системе
+                score_12 = (check_result['correct_answers'] / check_result['total_questions']) * 12
+                
                 info_texts = [
                     f"Варіант: {check_result['variant_number']}",
                     f"Всього питань: {check_result['total_questions']}",
                     f"Правильних відповідей: {check_result['correct_answers']}",
-                    f"Відсоток: {check_result['score_percentage']:.1f}%"
+                    f"Відсоток: {check_result['score_percentage']:.1f}%",
+                    f"Оцінка (12-бальна система): {score_12:.2f}"
                 ]
                 
                 for info_text in info_texts:
@@ -671,15 +707,23 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 details_para.add_run('Детальні результати:').bold = True
                 
                 # Создаем таблицу
-                table = doc.add_table(rows=1, cols=4)
+                table = doc.add_table(rows=1, cols=5)
                 table.style = 'Table Grid'
+                
+                # Настраиваем ширину колонок
+                table.columns[0].width = Inches(1.0)  # Питання
+                table.columns[1].width = Inches(1.5)  # Відповідь учня
+                table.columns[2].width = Inches(1.5)  # Правильна відповідь
+                table.columns[3].width = Inches(0.8)  # Бали
+                table.columns[4].width = Inches(1.8)  # Результат (увеличена для предотвращения переносов)
                 
                 # Заголовки таблицы
                 hdr_cells = table.rows[0].cells
                 hdr_cells[0].text = 'Питання'
                 hdr_cells[1].text = 'Відповідь учня'
                 hdr_cells[2].text = 'Правильна відповідь'
-                hdr_cells[3].text = 'Результат'
+                hdr_cells[3].text = 'Бали'
+                hdr_cells[4].text = 'Результат'
                 
                 # Делаем заголовки жирными
                 for cell in hdr_cells:
@@ -688,12 +732,25 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                             run.bold = True
                 
                 # Добавляем строки с результатами
+                points_per_question = 12 / check_result['total_questions']
                 for result in check_result['detailed_results']:
                     row_cells = table.add_row().cells
                     row_cells[0].text = str(result['question_number'])
                     row_cells[1].text = str(result['student_answer'])
                     row_cells[2].text = str(result['correct_answer'])
-                    row_cells[3].text = "✓" if result['is_correct'] else "✗"
+                    # Баллы за задание
+                    points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
+                    row_cells[3].text = points
+                    
+                    # Результат с цветными символами
+                    result_paragraph = row_cells[4].paragraphs[0]
+                    result_paragraph.clear()
+                    if result['is_correct']:
+                        run = result_paragraph.add_run("✓ Правильно")
+                        run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый цвет
+                    else:
+                        run = result_paragraph.add_run("✗ Неправильно")
+                        run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
                 
                 doc.save(word_path)
                 log.info(f"Создан Word документ с результатами проверки (fallback): {word_path}")
@@ -751,45 +808,36 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     
                     doc.add_paragraph()  # Пустая строка между вопросами
             else:
-                # Многоколоночная компоновка с использованием таблицы
+                # Многоколоночная компоновка с использованием встроенных колонок Word
                 questions = variant['questions']
-                questions_per_column = len(questions) // num_columns + (1 if len(questions) % num_columns > 0 else 0)
                 
-                # Создаем таблицу для колонок
-                table = doc.add_table(rows=1, cols=num_columns)
-                table.style = 'Table Grid'
+                # Создаем XML для колонок
+                from docx.oxml import parse_xml
+                cols_xml = f'<w:cols xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:num="{num_columns}" w:space="708"/>'
                 
-                # Убираем границы таблицы
-                for row in table.rows:
-                    for cell in row.cells:
-                        cell._element.get_or_add_tcPr().append(parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>'))
+                # Применяем колонки к текущей секции
+                section = doc.sections[-1]
+                section._sectPr.append(parse_xml(cols_xml))
                 
-                # Заполняем колонки
-                for col in range(num_columns):
-                    cell = table.cell(0, col)
-                    cell_para = cell.paragraphs[0]
-                    cell_para.clear()
+                # Добавляем все вопросы последовательно - Word автоматически распределит их по колонкам
+                for i, question in enumerate(questions, 1):
+                    # Текст вопроса
+                    question_para = doc.add_paragraph(f"{i}. {question['question_text']}")
+                    question_para.runs[0].bold = True
                     
-                    start_q = col * questions_per_column
-                    end_q = min(start_q + questions_per_column, len(questions))
+                    # Варианты ответов
+                    for j, option in enumerate(question['options'], 1):
+                        option_para = doc.add_paragraph(f"   {j}) {option}")
+                        option_para.style = 'Normal'
                     
-                    for q_idx in range(start_q, end_q):
-                        q_num = (q_idx - start_q) + 1  # Нумерация относительно начала колонки
-                        question = questions[q_idx]
-                        
-                        # Добавляем вопрос
-                        if q_idx > start_q:
-                            cell.add_paragraph()
-                        
-                        question_para = cell.add_paragraph(f"{q_num}. {question['question_text']}")
-                        question_para.runs[0].bold = True
-                        
-                        # Добавляем варианты ответов
-                        for j, option in enumerate(question['options'], 1):
-                            option_para = cell.add_paragraph(f"   {j}) {option}")
-                        
-                        if q_idx < end_q - 1:  # Не последний вопрос в колонке
-                            cell.add_paragraph()
+                    # Пустая строка между вопросами (кроме последнего)
+                    if i < len(questions):
+                        doc.add_paragraph()
+                
+                # Возвращаем обычную компоновку для следующих разделов
+                new_section = doc.add_section()
+                cols_reset_xml = '<w:cols xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:num="1"/>'
+                new_section._sectPr.append(parse_xml(cols_reset_xml))
             
             # Таблица для ответов
             doc.add_paragraph("Таблиця відповідей:")
