@@ -514,7 +514,7 @@ def generate_tests():
         add_log_message(f"Створено Word файл з тестами")
         
         # Створюємо Word файл з відповідями
-        answers_word_path = export_answers_to_word(variants, output_dir, st.session_state.input_file_name)
+        answers_word_path = export_answers_to_word(variants, output_dir, st.session_state.input_file_name, st.session_state.test_class, st.session_state.test_date)
         add_log_message(f"Створено Word файл з відповідями")
         
         # Зберігаємо шляхи до файлів

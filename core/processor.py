@@ -1679,8 +1679,16 @@ def read_test_word(file_path: str) -> pd.DataFrame:
         raise
 
 
-def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "") -> str:
-    """Экспортировать ответы всех вариантов в Word документ"""
+def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "", test_class: str = "", test_date: str = "") -> str:
+    """Экспортировать ответы всех вариантов в Word документ
+    
+    Args:
+        variants: Список вариантов тестов
+        output_dir: Папка для сохранения файлов
+        input_file_name: Имя входного файла
+        test_class: Класс для отображения в заголовке (опционально)
+        test_date: Дата теста для отображения в заголовке (опционально)
+    """
     try:
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -1699,7 +1707,13 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         section.right_margin = Inches(0.5)   # 1.27 см
         
         # Заголовок
-        heading = doc.add_heading('Відповіді до тестів', level=1)
+        title_parts = ["Відповіді до тестів"]
+        if test_class:
+            title_parts.append(f"Клас: {test_class}")
+        if test_date:
+            title_parts.append(f"Дата: {test_date}")
+        
+        heading = doc.add_heading(" - ".join(title_parts), level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Инструкция
