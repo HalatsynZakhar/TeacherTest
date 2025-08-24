@@ -759,7 +759,7 @@ def main():
                     if os.path.exists(st.session_state.check_reports['pdf_report']):
                         with open(st.session_state.check_reports['pdf_report'], "rb") as file:
                             st.download_button(
-                                label="📄 Звіт PDF",
+                                label="📄 Короткий звіт (PDF)",
                                 data=file,
                                 file_name=os.path.basename(st.session_state.check_reports['pdf_report']),
                                 mime="application/pdf",
@@ -771,7 +771,7 @@ def main():
                     if os.path.exists(st.session_state.check_reports['word_report']):
                         with open(st.session_state.check_reports['word_report'], "rb") as file:
                             st.download_button(
-                                label="📝 Звіт Word",
+                                label="📝 Розширений звіт (Word)",
                                 data=file,
                                 file_name=os.path.basename(st.session_state.check_reports['word_report']),
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

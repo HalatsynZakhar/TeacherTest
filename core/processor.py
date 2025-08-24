@@ -838,7 +838,7 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     pdf.add_page()
     pdf.set_font('Arial', 'B', 16)
-    pdf.cell(0, 10, "Результат перевірки тесту", ln=True, align='C')
+    pdf.cell(0, 10, "Результат перевірки тесту (короткий звіт)", ln=True, align='C')
     pdf.ln(10)
     
     # Дані учня (якщо є)
@@ -959,7 +959,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         section.right_margin = Inches(0.5)   # 1.27 см
         
         # Заголовок
-        heading = doc.add_heading('Результат перевірки тесту', level=1)
+        heading = doc.add_heading('Результат перевірки тесту (розширений звіт)', level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         doc.add_paragraph()  # Пустая строка
