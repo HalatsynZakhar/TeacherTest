@@ -626,6 +626,13 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         
         doc = Document()
         
+        # Устанавливаем минимальные поля для экономии места
+        section = doc.sections[0]
+        section.top_margin = Inches(0.5)     # 1.27 см
+        section.bottom_margin = Inches(0.5)  # 1.27 см
+        section.left_margin = Inches(0.5)    # 1.27 см
+        section.right_margin = Inches(0.5)   # 1.27 см
+        
         # Заголовок
         heading = doc.add_heading('Результат перевірки тесту', level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -837,6 +844,13 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
         
         doc = Document()
         
+        # Устанавливаем минимальные поля для экономии места
+        section = doc.sections[0]
+        section.top_margin = Inches(0.5)     # 1.27 см
+        section.bottom_margin = Inches(0.5)  # 1.27 см
+        section.left_margin = Inches(0.5)    # 1.27 см
+        section.right_margin = Inches(0.5)   # 1.27 см
+        
         for variant in variants:
             # Заголовок варианта - общий по центру перед колонками
             heading = doc.add_heading(f"Тест - Варіант {variant['variant_number']}", level=1)
@@ -1030,6 +1044,13 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
             word_path = os.path.join(output_dir, f"answers_{timestamp}.docx")
         
         doc = Document()
+        
+        # Устанавливаем минимальные поля для экономии места
+        section = doc.sections[0]
+        section.top_margin = Inches(0.5)     # 1.27 см
+        section.bottom_margin = Inches(0.5)  # 1.27 см
+        section.left_margin = Inches(0.5)    # 1.27 см
+        section.right_margin = Inches(0.5)   # 1.27 см
         
         # Заголовок
         heading = doc.add_heading('Відповіді до тестів', level=1)
