@@ -198,13 +198,15 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         log.error(f"Ошибка при чтении файла {file_path}: {e}")
         raise
 
-def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str, Any]]:
+def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle_mode: str = 'full', answer_shuffle_mode: str = 'random') -> List[Dict[str, Any]]:
     """
     Генерирует варианты тестов с перемешанными вопросами и ответами.
     
     Args:
         df: DataFrame с вопросами
         num_variants: Количество вариантов для генерации
+        question_shuffle_mode: Режим перемешивания вопросов ('full', 'easy_to_hard', 'none')
+        answer_shuffle_mode: Режим перемешивания вариантов ответов ('random', 'none')
         
     Returns:
         Список словарей с вариантами тестов
@@ -218,8 +220,16 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
             'answer_key': []
         }
         
-        # Перемешиваем порядок вопросов
-        shuffled_df = df.sample(frac=1).reset_index(drop=True)
+        # Упорядочиваем вопросы в зависимости от выбранного режима
+        if question_shuffle_mode == 'full':
+            # Полное перемешивание
+            shuffled_df = df.sample(frac=1).reset_index(drop=True)
+        elif question_shuffle_mode == 'easy_to_hard':
+            # Сортировка от легкого к сложному (по весу)
+            shuffled_df = df.sort_values('weight').reset_index(drop=True)
+        else:  # question_shuffle_mode == 'none'
+            # Не перемешиваем, оставляем исходный порядок
+            shuffled_df = df.reset_index(drop=True)
         
         for idx, row in shuffled_df.iterrows():
             question_data = {
@@ -257,9 +267,12 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
                 # Находим правильный ответ по индексу
                 correct_option_text = options[correct_answer_idx]
                 
-                # Перемешиваем варианты ответов
-                shuffled_options = options.copy()
-                random.shuffle(shuffled_options)
+                # Перемешиваем варианты ответов в зависимости от режима
+                if answer_shuffle_mode == 'random':
+                    shuffled_options = options.copy()
+                    random.shuffle(shuffled_options)
+                else:  # answer_shuffle_mode == 'none'
+                    shuffled_options = options.copy()
                 
                 # Находим новую позицию правильного ответа
                 new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерации с 1

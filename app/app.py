@@ -211,6 +211,10 @@ if 'test_class' not in st.session_state:
     st.session_state.test_class = ""
 if 'test_date' not in st.session_state:
     st.session_state.test_date = ""
+if 'question_shuffle_mode' not in st.session_state:
+    st.session_state.question_shuffle_mode = 'full'  # 'full', 'easy_to_hard', 'none'
+if 'answer_shuffle_mode' not in st.session_state:
+    st.session_state.answer_shuffle_mode = 'random'  # 'random', 'none'
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -291,7 +295,12 @@ def generate_tests():
             raise ValueError("Нет данных для генерации тестов")
         
         # Генерируем варианты тестов
-        variants = generate_test_variants(st.session_state.df, st.session_state.variants_count)
+        variants = generate_test_variants(
+            st.session_state.df, 
+            st.session_state.variants_count,
+            question_shuffle_mode=st.session_state.question_shuffle_mode,
+            answer_shuffle_mode=st.session_state.answer_shuffle_mode
+        )
         add_log_message(f"Сгенерировано {len(variants)} вариантов тестов")
         
         # Создаем временную папку для выходных файлов
@@ -420,6 +429,32 @@ def main():
                 "Оптимізація місця",
                 value=st.session_state.space_optimization,
                 help="Мінімізує кількість переводів рядків для економії місця (може погіршити читабельність)"
+            )
+            
+            # Настройки перемешивания
+            st.subheader("Налаштування перемішування")
+            
+            st.session_state.question_shuffle_mode = st.selectbox(
+                "Перемішування питань:",
+                options=['full', 'easy_to_hard', 'none'],
+                format_func=lambda x: {
+                    'full': 'Повне перемішування',
+                    'easy_to_hard': 'Від легкого до складного',
+                    'none': 'Не перемішувати'
+                }[x],
+                index=['full', 'easy_to_hard', 'none'].index(st.session_state.question_shuffle_mode),
+                help="Виберіть спосіб упорядкування питань у тесті"
+            )
+            
+            st.session_state.answer_shuffle_mode = st.selectbox(
+                "Перемішування варіантів:",
+                options=['random', 'none'],
+                format_func=lambda x: {
+                    'random': 'Випадкове',
+                    'none': 'Ні'
+                }[x],
+                index=['random', 'none'].index(st.session_state.answer_shuffle_mode),
+                help="Виберіть спосіб перемішування варіантів відповідей"
             )
             
             # Дополнительные поля для заголовка теста
