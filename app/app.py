@@ -199,6 +199,12 @@ if 'student_answers' not in st.session_state:
     st.session_state.student_answers = ""
 if 'columns_count' not in st.session_state:
     st.session_state.columns_count = 1
+if 'student_class' not in st.session_state:
+    st.session_state.student_class = ""
+if 'student_full_name' not in st.session_state:
+    st.session_state.student_full_name = ""
+if 'input_file_name' not in st.session_state:
+    st.session_state.input_file_name = ""
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -234,6 +240,9 @@ def load_file(uploaded_file_arg=None):
             return
         
         add_log_message(f"Загрузка файла: {os.path.basename(uploaded_file_arg)}")
+        
+        # Сохраняем имя файла без расширения для использования в именах выходных файлов
+        st.session_state.input_file_name = os.path.splitext(os.path.basename(uploaded_file_arg))[0]
         
         # Определяем тип файла по расширению
         file_extension = os.path.splitext(uploaded_file_arg)[1].lower()
@@ -285,15 +294,15 @@ def generate_tests():
         # PDF файлы отключены - используем только Word и Excel
         
         # Создаем Excel файл-ключ
-        excel_key_path = create_excel_answer_key(variants, output_dir)
+        excel_key_path = create_excel_answer_key(variants, output_dir, st.session_state.input_file_name)
         add_log_message(f"Создан Excel файл-ключ")
         
         # Создаем Word файл с тестами
-        test_word_path = create_test_word(variants, output_dir, st.session_state.columns_count)
+        test_word_path = create_test_word(variants, output_dir, st.session_state.columns_count, st.session_state.input_file_name)
         add_log_message(f"Создан Word файл с тестами")
         
         # Создаем Word файл с ответами
-        answers_word_path = export_answers_to_word(variants, output_dir)
+        answers_word_path = export_answers_to_word(variants, output_dir, st.session_state.input_file_name)
         add_log_message(f"Создан Word файл с ответами")
         
         # Сохраняем пути к файлам
@@ -332,6 +341,13 @@ def check_answers():
             st.session_state.variant_number,
             student_answers
         )
+        
+        # Добавляем данные ученика в результат
+        student_info = {
+            'class': st.session_state.student_class.strip(),
+            'full_name': st.session_state.student_full_name.strip()
+        }
+        check_result['student_info'] = student_info
         
         # Создаем отчеты с результатами
         output_dir = get_downloads_folder()
@@ -519,8 +535,27 @@ def main():
             st.session_state.answer_key_file = key_file_path
             st.success(f"✅ Файл-ключ завантажено: {answer_key_file.name}")
         
-        # Ввод ответов ученика
+        # Ввод данных ученика
         if st.session_state.answer_key_file:
+            st.subheader("👤 Дані учня (опціонально)")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.session_state.student_class = st.text_input(
+                    "Клас:",
+                    value=st.session_state.student_class,
+                    placeholder="Наприклад: 10-А"
+                )
+            with col2:
+                st.session_state.student_full_name = st.text_input(
+                    "ПІБ учня:",
+                    value=st.session_state.student_full_name,
+                    placeholder="Прізвище Ім'я По батькові"
+                )
+            
+            st.markdown("---")
+            
+            # Ввод ответов ученика
             st.session_state.student_answers = st.text_input(
                 "Відповіді учня (через кому):",
                 value=st.session_state.student_answers,

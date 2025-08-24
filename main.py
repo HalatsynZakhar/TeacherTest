@@ -238,7 +238,8 @@ class TeacherTestApp:
             
             # Создание Excel файла-ключа
             self.log_message("Создание Excel файла-ключа...")
-            excel_key_path = processor.create_excel_answer_key(variants, self.output_folder_path.get())
+            input_file_name = os.path.splitext(os.path.basename(self.excel_file_path.get()))[0]
+            excel_key_path = processor.create_excel_answer_key(variants, self.output_folder_path.get(), input_file_name)
             
             self.log_message(f"Готово! Созданы файлы:")
             self.log_message(f"- Excel ключ: {excel_key_path}")

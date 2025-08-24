@@ -185,7 +185,7 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     Returns:
         Кортеж (путь к файлу с тестами, путь к файлу с ответами)
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     test_pdf_path = os.path.join(output_dir, f"tests_{timestamp}.pdf")
     answers_pdf_path = os.path.join(output_dir, f"answers_{timestamp}.pdf")
     
@@ -359,7 +359,7 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     log.info(f"Созданы PDF файлы: {test_pdf_path}, {answers_pdf_path}")
     return test_pdf_path, answers_pdf_path
 
-def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str) -> str:
+def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "") -> str:
     """
     Создает Excel файл-ключ с ответами для всех вариантов.
     
@@ -370,8 +370,11 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str) -> 
     Returns:
         Путь к созданному Excel файлу
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    excel_path = os.path.join(output_dir, f"answer_key_{timestamp}.xlsx")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    if input_file_name:
+        excel_path = os.path.join(output_dir, f"{input_file_name}_ключ_{timestamp}.xlsx")
+    else:
+        excel_path = os.path.join(output_dir, f"answer_key_{timestamp}.xlsx")
     
     # Подготавливаем данные для Excel
     data = []
@@ -464,13 +467,13 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     Returns:
         Путь к созданному PDF файлу
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     
     # Нормализуем путь и проверяем доступность
     try:
         output_dir = os.path.normpath(output_dir)
         # Если это сетевой путь и он недоступен, используем локальную папку
-        if output_dir.startswith('\\\\') and not os.path.exists(output_dir):
+        if output_dir.startswith('\\') and not os.path.exists(output_dir):
             output_dir = os.path.expanduser('~/Desktop')
             log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
         
@@ -481,7 +484,14 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем текущую папку.")
         output_dir = os.getcwd()
     
-    pdf_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.pdf")
+    # Формируем имя файла в формате Класс_ПІБ_Вариант_Дата
+    student_info = check_result.get('student_info', {})
+    class_name = student_info.get('class', '').replace(' ', '_').replace('-', '_') or 'БезКласу'
+    full_name = student_info.get('full_name', '').replace(' ', '_') or 'БезІмені'
+    variant = check_result['variant_number']
+    
+    filename = f"{class_name}_{full_name}_Варіант{variant}_{timestamp}.pdf"
+    pdf_path = os.path.join(output_dir, filename)
     
     pdf = FPDF()
     pdf.add_font('Arial', '', 'c:/windows/fonts/arial.ttf', uni=True)
@@ -493,6 +503,19 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     pdf.set_font('Arial', 'B', 16)
     pdf.cell(0, 10, "Результат перевірки тесту", ln=True, align='C')
     pdf.ln(10)
+    
+    # Данные ученика (если есть)
+    student_info = check_result.get('student_info', {})
+    if any(student_info.values()):
+        pdf.set_font('Arial', 'B', 12)
+        add_multiline_text(pdf, "Дані учня / учениці:", check_page_width, 8, 10)
+        pdf.set_font('Arial', '', 10)
+        
+        if student_info.get('class'):
+            add_multiline_text(pdf, f"Клас: {student_info['class']}", check_page_width, 6, 10)
+        if student_info.get('full_name'):
+            add_multiline_text(pdf, f"ПІБ: {student_info['full_name']}", check_page_width, 6, 10)
+        pdf.ln(5)
     
     # Основная информация
     pdf.set_font('Arial', 'B', 12)
@@ -581,8 +604,16 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
         
         os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        word_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.docx")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        
+        # Формируем имя файла в формате Класс_ПІБ_Вариант_Дата
+        student_info = check_result.get('student_info', {})
+        class_name = student_info.get('class', '').replace(' ', '_').replace('-', '_') or 'БезКласу'
+        full_name = student_info.get('full_name', '').replace(' ', '_') or 'БезІмені'
+        variant = check_result['variant_number']
+        
+        filename = f"{class_name}_{full_name}_Варіант{variant}_{timestamp}.docx"
+        word_path = os.path.join(output_dir, filename)
         
         doc = Document()
         
@@ -591,6 +622,19 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         doc.add_paragraph()  # Пустая строка
+        
+        # Данные ученика (если есть)
+        student_info = check_result.get('student_info', {})
+        if any(student_info.values()):
+            student_para = doc.add_paragraph()
+            student_para.add_run('Дані учня / учениці:').bold = True
+            
+            if student_info.get('class'):
+                doc.add_paragraph(f"Клас: {student_info['class']}", style='List Bullet')
+            if student_info.get('full_name'):
+                doc.add_paragraph(f"ПІБ: {student_info['full_name']}", style='List Bullet')
+            
+            doc.add_paragraph()  # Пустая строка
         
         # Основная информация
         info_para = doc.add_paragraph()
@@ -764,7 +808,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             raise
 
 
-def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1) -> str:
+def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "") -> str:
     """Создать Word документ с тестами для всех вариантов
     
     Args:
@@ -774,8 +818,11 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
     """
     try:
         os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        word_path = os.path.join(output_dir, f"tests_{timestamp}.docx")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        if input_file_name:
+            word_path = os.path.join(output_dir, f"{input_file_name}_тести_{timestamp}.docx")
+        else:
+            word_path = os.path.join(output_dir, f"tests_{timestamp}.docx")
         
         doc = Document()
         
@@ -956,12 +1003,15 @@ def read_test_word(file_path: str) -> pd.DataFrame:
         raise
 
 
-def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str) -> str:
+def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "") -> str:
     """Экспортировать ответы всех вариантов в Word документ"""
     try:
         os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        word_path = os.path.join(output_dir, f"answers_{timestamp}.docx")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        if input_file_name:
+            word_path = os.path.join(output_dir, f"{input_file_name}_ключ_{timestamp}.docx")
+        else:
+            word_path = os.path.join(output_dir, f"answers_{timestamp}.docx")
         
         doc = Document()
         
