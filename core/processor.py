@@ -1808,3 +1808,107 @@ def generate_neural_query_document(output_dir: str) -> str:
     except Exception as e:
         log.error(f"Помилка при створенні документа з запитом: {e}")
         raise
+
+
+def save_student_result_to_excel(check_result: Dict[str, Any], student_info: Dict[str, str], 
+                                work_name: str, excel_file_path: str) -> None:
+    """
+    Зберігає результат перевірки учня в Excel файл.
+    
+    Args:
+        check_result: Результати перевірки
+        student_info: Інформація про учня (клас, ПІБ)
+        work_name: Назва роботи
+        excel_file_path: Шлях до Excel файлу
+    """
+    try:
+        # Підготовка даних для збереження
+        check_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        variant = check_result['variant_number']
+        student_class = student_info.get('class', '')
+        student_name = student_info.get('full_name', '')
+        
+        # Детальні бали за кожне завдання (чисті числа)
+        detailed_points = []
+        detailed_max_points = []
+        for result in check_result['detailed_results']:
+            detailed_points.append(result['points'])
+            detailed_max_points.append(result['max_points'])
+        
+        # Загальні результати (чисті числа)
+        total_percentage = check_result['score_percentage']
+        weighted_score = check_result['weighted_score']
+        max_score = check_result['max_score']
+        
+        # Створюємо рядок даних з чистими числами
+        row_data = {
+            'Дата перевірки': check_date,
+            'Назва роботи': work_name,
+            'Клас': student_class,
+            'Учень': student_name,
+            'Варіант': variant,
+            'Загальний відсоток (%)': total_percentage,
+            'Отримано балів': weighted_score,
+            'Максимум балів': max_score
+        }
+        
+        # Додаємо детальні бали за кожне завдання (чисті числа)
+        for i, (points, max_points) in enumerate(zip(detailed_points, detailed_max_points), 1):
+            row_data[f'Завдання {i} (бали)'] = points
+            row_data[f'Завдання {i} (макс)'] = max_points
+        
+        # Перевіряємо, чи існує файл
+        if os.path.exists(excel_file_path):
+            # Читаємо існуючий файл
+            try:
+                existing_df = pd.read_excel(excel_file_path)
+            except Exception:
+                # Якщо файл пошкоджений, створюємо новий
+                existing_df = pd.DataFrame()
+        else:
+            # Створюємо новий DataFrame
+            existing_df = pd.DataFrame()
+        
+        # Створюємо новий рядок
+        new_row_df = pd.DataFrame([row_data])
+        
+        # Об'єднуємо з існуючими даними
+        if not existing_df.empty:
+            # Переконуємося, що всі колонки присутні в обох DataFrame
+            all_columns = list(set(existing_df.columns.tolist() + new_row_df.columns.tolist()))
+            
+            # Переупорядковуємо колонки: основні спочатку, потім завдання
+            base_columns = ['Дата перевірки', 'Назва роботи', 'Клас', 'Учень', 'Варіант', 
+                          'Загальний відсоток (%)', 'Отримано балів', 'Максимум балів']
+            task_columns = [col for col in all_columns if col.startswith('Завдання')]
+            task_columns.sort(key=lambda x: (int(x.split()[1]) if x.split()[1].isdigit() else 0, x))
+            
+            ordered_columns = base_columns + task_columns
+            
+            # Додаємо відсутні колонки
+            for col in ordered_columns:
+                if col not in existing_df.columns:
+                    existing_df[col] = ''
+                if col not in new_row_df.columns:
+                    new_row_df[col] = ''
+            
+            # Переупорядковуємо колонки
+            existing_df = existing_df[ordered_columns]
+            new_row_df = new_row_df[ordered_columns]
+            
+            # Об'єднуємо
+            result_df = pd.concat([existing_df, new_row_df], ignore_index=True)
+        else:
+            result_df = new_row_df
+        
+        # Створюємо папку, якщо вона не існує
+        os.makedirs(os.path.dirname(excel_file_path), exist_ok=True)
+        
+        # Зберігаємо в Excel
+        result_df.to_excel(excel_file_path, index=False)
+        
+        log.info(f"Результат учня збережено в Excel файл: {excel_file_path}")
+        
+    except Exception as e:
+        log.error(f"Помилка при збереженні результату в Excel: {e}")
+        raise

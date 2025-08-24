@@ -34,7 +34,8 @@ from core.processor import (
     read_test_word,
     export_answers_to_word,
     generate_test_template,
-    generate_neural_query_document
+    generate_neural_query_document,
+    save_student_result_to_excel
 )
 
 # Настройка логирования
@@ -219,6 +220,14 @@ if 'answer_shuffle_mode' not in st.session_state:
     st.session_state.answer_shuffle_mode = 'random'  # 'random', 'none'
 if 'last_error' not in st.session_state:
     st.session_state.last_error = None
+if 'test_work_name' not in st.session_state:
+    st.session_state.test_work_name = ""
+if 'results_excel_path' not in st.session_state:
+    # Встановлюємо папку Завантаження як значення за замовчуванням
+    downloads_folder = get_downloads_folder()
+    st.session_state.results_excel_path = downloads_folder
+if 'results_excel_filename' not in st.session_state:
+    st.session_state.results_excel_filename = "results.xlsx"
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -409,6 +418,47 @@ def check_answers():
         st.session_state.last_error = error_msg
         add_log_message(error_msg, "ERROR")
         log.error(error_msg, exc_info=True)
+        return False
+
+def save_student_result_to_excel():
+    """Збереження результату учня у Excel файл"""
+    try:
+        if not hasattr(st.session_state, 'check_result') or not st.session_state.check_result:
+            st.session_state.last_error = "Немає результатів для збереження"
+            return False
+        
+        # Формуємо повний шлях до файлу
+        full_path = os.path.join(st.session_state.results_excel_path, st.session_state.results_excel_filename)
+        
+        # Підготовуємо інформацію про учня
+        student_info = {
+            'class': st.session_state.student_class,
+            'full_name': st.session_state.student_full_name
+        }
+        
+        # Викликаємо функцію збереження з processor.py
+        from core.processor import save_student_result_to_excel as save_result_func
+        save_result_func(
+            check_result=st.session_state.check_result,
+            student_info=student_info,
+            work_name=st.session_state.test_work_name,
+            excel_file_path=full_path
+        )
+        
+        success = True
+        
+        if success:
+            add_log_message(f"Результат збережено у файл {full_path}", "SUCCESS")
+            return True
+        else:
+            st.session_state.last_error = "Помилка при збереженні результату"
+            return False
+            
+    except Exception as e:
+        error_msg = f"Помилка при збереженні: {str(e)}"
+        st.session_state.last_error = error_msg
+        add_log_message(error_msg, "ERROR")
+        log.error(f"Error in save_student_result_to_excel: {e}", exc_info=True)
         return False
 
 # Основной интерфейс
@@ -676,7 +726,14 @@ def main():
         
         # Ввод данных ученика
         if st.session_state.answer_key_file:
-            st.subheader("👤 Дані учня (опціонально)")
+            st.subheader("👤 Дані учня та роботи")
+            
+            # Назва роботи
+            st.session_state.test_work_name = st.text_input(
+                "📝 Назва роботи:",
+                value=st.session_state.test_work_name,
+                placeholder="Наприклад: Контрольна робота №1 з математики"
+            )
             
             col1, col2 = st.columns(2)
             with col1:
@@ -690,6 +747,23 @@ def main():
                     "ПІБ учня:",
                     value=st.session_state.student_full_name,
                     placeholder="Прізвище Ім'я По батькові"
+                )
+            
+            # Налаштування файлу результатів
+            st.subheader("📊 Налаштування файлу результатів")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.session_state.results_excel_path = st.text_input(
+                    "📁 Шлях до папки для збереження результатів:",
+                    value=st.session_state.results_excel_path,
+                    placeholder="Наприклад: C:\\Users\\Teacher\\Documents\\Results"
+                )
+            with col2:
+                st.session_state.results_excel_filename = st.text_input(
+                    "📄 Назва файлу:",
+                    value=st.session_state.results_excel_filename,
+                    placeholder="results.xlsx"
                 )
             
             st.markdown("---")
@@ -777,6 +851,22 @@ def main():
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True
                             )
+                
+                # Кнопка фіксації результату
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("💾 Фіксація результату учня у таблицю", type="secondary", use_container_width=True):
+                        if st.session_state.results_excel_path and st.session_state.results_excel_filename:
+                            with st.spinner("Збереження результату..."):
+                                success = save_student_result_to_excel()
+                            
+                            if success:
+                                st.success("✅ Результат успішно збережено у таблицю!")
+                            else:
+                                st.error("❌ Помилка при збереженні результату")
+                        else:
+                            st.error("❌ Вкажіть шлях до папки та назву файлу для збереження результатів")
     
     # Журнал событий
     with st.expander("📋 Журнал подій", expanded=False):
