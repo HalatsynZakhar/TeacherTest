@@ -552,24 +552,69 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
     else:
         excel_path = os.path.join(output_dir, f"answer_key_{timestamp}.xlsx")
     
-    # Підготовлюємо дані для Excel
-    data = []
-    for variant in variants:
-        # Створюємо рядок з відповідями через кому
-        answers_str = ",".join(map(str, variant['answer_key']))
-        # Створюємо рядок з вагами через кому
-        weights_str = ",".join(str(q['weight']) for q in variant['questions'])
-        data.append({
-            'Варіант': variant['variant_number'],
-            'Відповіді': answers_str,
-            'Ваги': weights_str
-        })
+    # Створюємо Excel файл з кількома аркушами
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        # Аркуш 1: Основні відповіді (для зворотної сумісності)
+        basic_data = []
+        for variant in variants:
+            # Створюємо рядок з відповідями через кому
+            answers_str = ",".join(map(str, variant['answer_key']))
+            # Створюємо рядок з вагами через кому
+            weights_str = ",".join(str(q['weight']) for q in variant['questions'])
+            basic_data.append({
+                'Варіант': variant['variant_number'],
+                'Відповіді': answers_str,
+                'Ваги': weights_str
+            })
+        
+        basic_df = pd.DataFrame(basic_data)
+        basic_df.to_excel(writer, sheet_name='Основні_відповіді', index=False)
+        
+        # Аркуш 2: Детальна інформація про питання
+        detailed_data = []
+        for variant in variants:
+            for i, question in enumerate(variant['questions']):
+                question_data = {
+                    'Варіант': variant['variant_number'],
+                    'Номер_питання': i + 1,
+                    'Текст_питання': question['question_text'],
+                    'Тип_питання': 'Тестове' if question['is_test_question'] else 'Відкрите',
+                    'Правильна_відповідь': question['correct_answer'],
+                    'Вага': question['weight']
+                }
+                
+                # Додаємо варіанти відповідей для тестових питань
+                if question['is_test_question'] and 'options' in question:
+                    for j, option in enumerate(question['options']):
+                        question_data[f'Варіант_{j+1}'] = option
+                
+                detailed_data.append(question_data)
+        
+        detailed_df = pd.DataFrame(detailed_data)
+        detailed_df.to_excel(writer, sheet_name='Детальна_інформація', index=False)
+        
+        # Аркуш 3: Статистика варіантів
+        stats_data = []
+        for variant in variants:
+            total_questions = len(variant['questions'])
+            test_questions = sum(1 for q in variant['questions'] if q['is_test_question'])
+            open_questions = total_questions - test_questions
+            total_weight = sum(q['weight'] for q in variant['questions'])
+            avg_weight = total_weight / total_questions if total_questions > 0 else 0
+            
+            stats_data.append({
+                'Варіант': variant['variant_number'],
+                'Загальна_кількість_питань': total_questions,
+                'Тестових_питань': test_questions,
+                'Відкритих_питань': open_questions,
+                'Загальна_вага': total_weight,
+                'Середня_вага': round(avg_weight, 2)
+            })
+        
+        stats_df = pd.DataFrame(stats_data)
+        stats_df.to_excel(writer, sheet_name='Статистика_варіантів', index=False)
     
-    # Створюємо DataFrame і зберігаємо в Excel
-    df = pd.DataFrame(data)
-    df.to_excel(excel_path, index=False)
-    
-    log.info(f"Створено Excel файл-ключ: {excel_path}")
+    log.info(f"Створено розширений Excel файл-ключ: {excel_path}")
     return excel_path
 
 def check_student_answers(answer_key_file: str, variant_number: int, student_answers: List) -> Dict[str, Any]:
@@ -585,8 +630,17 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
         Словник з результатами перевірки
     """
     try:
-        # Читаємо файл-ключ з відповідями
-        key_df = pd.read_excel(answer_key_file)
+        # Спробуємо прочитати розширений формат (з кількома аркушами)
+        detailed_info = None
+        try:
+            # Читаємо основний аркуш
+            key_df = pd.read_excel(answer_key_file, sheet_name='Основні_відповіді')
+            # Читаємо детальну інформацію
+            detailed_df = pd.read_excel(answer_key_file, sheet_name='Детальна_інформація')
+            detailed_info = detailed_df[detailed_df['Варіант'] == variant_number]
+        except:
+            # Якщо не вдалося прочитати розширений формат, читаємо старий формат
+            key_df = pd.read_excel(answer_key_file)
         
         # Знаходимо рядок з потрібним варіантом
         variant_row = key_df[key_df['Варіант'] == variant_number]
@@ -623,6 +677,21 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
         for i, (student_ans, correct_ans, weight) in enumerate(zip(student_answers, answer_key, weights)):
             question_points = (weight / total_weight) * total_points
             
+            # Отримуємо додаткову інформацію про питання, якщо доступна
+            question_text = ""
+            question_type = ""
+            question_options = []
+            
+            if detailed_info is not None and not detailed_info.empty:
+                question_detail = detailed_info[detailed_info['Номер_питання'] == i + 1]
+                if not question_detail.empty:
+                    question_text = question_detail['Текст_питання'].iloc[0]
+                    question_type = question_detail['Тип_питання'].iloc[0]
+                    # Збираємо варіанти відповідей для тестових питань
+                    for col in question_detail.columns:
+                        if col.startswith('Варіант_') and pd.notna(question_detail[col].iloc[0]):
+                            question_options.append(str(question_detail[col].iloc[0]))
+            
             # Перевіряємо правильність відповіді
             # Визначаємо тип питання: якщо правильна відповідь складається тільки з цифр, це тестове завдання
             is_test_question = str(correct_ans).strip().isdigit()
@@ -646,7 +715,7 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             if is_correct:
                 correct_weighted_score += question_points
             
-            detailed_results.append({
+            result_item = {
                 'question_number': i + 1,
                 'student_answer': student_ans_int,
                 'correct_answer': correct_ans,
@@ -654,8 +723,13 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                 'weight': weight,
                 'points': question_points if is_correct else 0,
                 'max_points': question_points,
-                'is_test_question': is_test_question
-            })
+                'is_test_question': is_test_question,
+                'question_text': question_text,
+                'question_type': question_type,
+                'question_options': question_options
+            }
+            
+            detailed_results.append(result_item)
         
         # Обчислюємо відсоток
         score_percentage = (correct_weighted_score / total_points) * 100
@@ -926,8 +1000,116 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 run = result_paragraph.add_run("✗ Неправильно")
                 run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
         
-        # Добавляем разрыв страницы сразу после таблицы результатов
+        # Добавляем детальный анализ с полным текстом вопросов
         doc.add_page_break()
+        
+        # Заголовок детального анализа
+        detailed_heading = doc.add_heading('Детальний аналіз відповідей', level=2)
+        detailed_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()  # Пустая строка
+        
+        # Проходим по каждому вопросу
+        for i, result in enumerate(check_result['detailed_results'], 1):
+            # Заголовок вопроса
+            question_heading = doc.add_heading(f'Питання {result["question_number"]}', level=3)
+            
+            # Текст вопроса (если доступен)
+            question_text = result.get('question_text', '')
+            if question_text:
+                question_para = doc.add_paragraph()
+                question_para.add_run('Текст питання: ').bold = True
+                question_para.add_run(question_text)
+            
+            # Тип вопроса
+            question_type = result.get('question_type', 'Невідомий')
+            if not question_type and result.get('is_test_question'):
+                question_type = 'Тестове'
+            elif not question_type:
+                question_type = 'Відкрите'
+            
+            type_para = doc.add_paragraph()
+            type_para.add_run('Тип питання: ').bold = True
+            type_para.add_run(question_type)
+            
+            # Варианты ответов для тестовых вопросов
+            question_options = result.get('question_options', [])
+            if question_options and result.get('is_test_question'):
+                options_para = doc.add_paragraph()
+                options_para.add_run('Варіанти відповідей:').bold = True
+                
+                for j, option in enumerate(question_options, 1):
+                    option_para = doc.add_paragraph(f'{j}. {option}', style='List Number')
+                    # Выделяем правильный вариант зеленым
+                    try:
+                        correct_answer_num = int(result['correct_answer'])
+                        if j == correct_answer_num:
+                            for run in option_para.runs:
+                                run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                                run.bold = True
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Ответы
+            answers_para = doc.add_paragraph()
+            answers_para.add_run('Відповіді:').bold = True
+            
+            # Ответ ученика
+            student_para = doc.add_paragraph()
+            student_para.add_run('Відповідь учня: ').bold = True
+            student_run = student_para.add_run(str(result['student_answer']))
+            
+            # Правильный ответ
+            correct_para = doc.add_paragraph()
+            correct_para.add_run('Правильна відповідь: ').bold = True
+            correct_run = correct_para.add_run(str(result['correct_answer']))
+            correct_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+            correct_run.bold = True
+            
+            # Результат с цветовым выделением
+            result_para = doc.add_paragraph()
+            result_para.add_run('Результат: ').bold = True
+            
+            if result['is_correct']:
+                result_run = result_para.add_run('✓ ПРАВИЛЬНО')
+                result_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                result_run.bold = True
+                # Выделяем ответ ученика зеленым, если правильный
+                student_run.font.color.rgb = RGBColor(0, 128, 0)
+                student_run.bold = True
+            else:
+                result_run = result_para.add_run('✗ НЕПРАВИЛЬНО')
+                result_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
+                result_run.bold = True
+                # Выделяем ответ ученика красным, если неправильный
+                student_run.font.color.rgb = RGBColor(255, 0, 0)
+                student_run.bold = True
+            
+            # Баллы
+            earned_points = result.get('points', 0)
+            max_points = result.get('max_points', 0)
+            points_para = doc.add_paragraph()
+            points_para.add_run('Бали: ').bold = True
+            points_text = f'{format_number_with_comma(earned_points, 2)} з {format_number_with_comma(max_points, 2)}'
+            points_run = points_para.add_run(points_text)
+            
+            if result['is_correct']:
+                points_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+            else:
+                points_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
+            points_run.bold = True
+            
+            # Вес вопроса
+            weight = result.get('weight', 0)
+            if weight:
+                weight_para = doc.add_paragraph()
+                weight_para.add_run('Вага питання: ').bold = True
+                weight_para.add_run(str(weight))
+            
+            # Разделитель между вопросами
+            if i < len(check_result['detailed_results']):
+                doc.add_paragraph('─' * 50).alignment = WD_ALIGN_PARAGRAPH.CENTER
+                doc.add_paragraph()  # Пустая строка
         
         doc.save(word_path)
         log.info(f"Створено Word документ з результатами перевірки: {word_path}")
