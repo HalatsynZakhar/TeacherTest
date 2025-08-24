@@ -12,6 +12,11 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 import tempfile
 
+def format_number_with_comma(number: float, decimals: int = 1) -> str:
+    """Форматирует число с запятой вместо точки как десятичный разделитель"""
+    formatted = f"{number:.{decimals}f}"
+    return formatted.replace('.', ',')
+
 log = logging.getLogger(__name__)
 
 def ensure_temp_dir(prefix="temp_"):
@@ -608,7 +613,7 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             'detailed_results': detailed_results
         }
         
-        log.info(f"Проверка завершена для варианта {variant_number}: {correct_count}/{len(answer_key)} ({score_percentage:.1f}%, {correct_weighted_score:.2f}/{total_points} баллов)")
+        log.info(f"Проверка завершена для варианта {variant_number}: {correct_count}/{len(answer_key)} ({format_number_with_comma(score_percentage, 1)}%, {format_number_with_comma(correct_weighted_score, 2)}/{total_points} баллов)")
         return result
         
     except Exception as e:
@@ -678,8 +683,8 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         f"Варіант: {check_result['variant_number']}",
         f"Всього питань: {check_result['total_questions']}",
         f"Правильних відповідей: {check_result['correct_answers']}",
-        f"Відсоток: {check_result['score_percentage']:.1f}%",
-        f"Бали: {weighted_score:.2f} з {max_score}"
+        f"Відсоток: {format_number_with_comma(check_result['score_percentage'], 1)}%",
+        f"Бали: {format_number_with_comma(weighted_score, 2)} з {max_score}"
     ]
     
     for info_text in info_texts:
@@ -709,7 +714,7 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         # Баллы за задание с учетом весов
         earned_points = result.get('points', 0)
         max_points = result.get('max_points', 0)
-        points_text = f"{earned_points:.2f}/{max_points:.2f}"
+        points_text = f"{format_number_with_comma(earned_points, 2)}/{format_number_with_comma(max_points, 2)}"
         pdf.cell(30, 8, points_text, 1, 0, 'C')
         # Используем текст вместо символов, которые не поддерживаются шрифтом Arial
         result_text = "Правильно" if result['is_correct'] else "Неправильно"
@@ -803,8 +808,8 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             f"Варіант: {check_result['variant_number']}",
             f"Всього питань: {check_result['total_questions']}",
             f"Правильних відповідей: {check_result['correct_answers']}",
-            f"Відсоток: {check_result['score_percentage']:.1f}%",
-            f"Бали: {weighted_score:.2f} з {max_score}"
+            f"Відсоток: {format_number_with_comma(check_result['score_percentage'], 1)}%",
+        f"Бали: {format_number_with_comma(weighted_score, 2)} з {max_score}"
         ]
         
         for info_text in info_texts:
@@ -850,7 +855,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             # Баллы за задание с учетом веса
             earned_points = result.get('earned_points', 0)
             max_points = result.get('max_points', 0)
-            points = f"{earned_points:.2f} / {max_points:.2f}"
+            points = f"{format_number_with_comma(earned_points, 2)} / {format_number_with_comma(max_points, 2)}"
             row_cells[3].text = points
             
             # Результат с цветными символами
@@ -898,8 +903,8 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     f"Варіант: {check_result['variant_number']}",
                     f"Всього питань: {check_result['total_questions']}",
                     f"Правильних відповідей: {check_result['correct_answers']}",
-                    f"Відсоток: {check_result['score_percentage']:.1f}%",
-                    f"Оцінка (12-бальна система): {score_12:.2f}"
+                    f"Відсоток: {format_number_with_comma(check_result['score_percentage'], 1)}%",
+            f"Оцінка (12-бальна система): {format_number_with_comma(score_12, 2)}"
                 ]
                 
                 for info_text in info_texts:
@@ -944,7 +949,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     row_cells[1].text = str(result['student_answer'])
                     row_cells[2].text = str(result['correct_answer'])
                     # Баллы за задание
-                    points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
+                    points = format_number_with_comma(points_per_question, 2) if result['is_correct'] else "0,00"
                     row_cells[3].text = points
                     
                     # Результат с цветными символами
@@ -1033,15 +1038,25 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 if question_points == int(question_points):
                     points_str = f"({int(question_points)} балів)"
                 else:
-                    points_str = f"({question_points:.1f} балів)"
+                    points_str = f"({format_number_with_comma(question_points, 1)} балів)"
                 
-                # Номер задания и баллы отдельно от текста вопроса
-                question_header = doc.add_paragraph(f"{i}. {points_str}")
-                question_header.runs[0].bold = True
-                
-                # Текст вопроса отдельной строкой
-                question_para = doc.add_paragraph(question['question_text'])
-                question_para.style = 'Normal'
+                if space_optimization:
+                    # В компактном режиме - номер, баллы и текст вопроса в одной строке
+                    question_para = doc.add_paragraph()
+                    # Добавляем номер и баллы жирным шрифтом
+                    run1 = question_para.add_run(f"{i}. {points_str} ")
+                    run1.bold = True
+                    # Добавляем текст вопроса обычным шрифтом
+                    run2 = question_para.add_run(question['question_text'])
+                    question_para.style = 'Normal'
+                else:
+                    # В обычном режиме - номер и баллы отдельно от текста вопроса
+                    question_header = doc.add_paragraph(f"{i}. {points_str}")
+                    question_header.runs[0].bold = True
+                    
+                    # Текст вопроса отдельной строкой
+                    question_para = doc.add_paragraph(question['question_text'])
+                    question_para.style = 'Normal'
                 
                 # Варианты ответов в зависимости от типа задания
                 if question['is_test_question']:
