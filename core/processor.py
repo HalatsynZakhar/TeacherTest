@@ -214,7 +214,7 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
         }
         
         # Перемешиваем порядок вопросов
-        shuffled_df = df.sample(frac=1, random_state=variant_num).reset_index(drop=True)
+        shuffled_df = df.sample(frac=1).reset_index(drop=True)
         
         for idx, row in shuffled_df.iterrows():
             question_data = {
@@ -253,7 +253,6 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
                 correct_option_text = options[correct_answer_idx]
                 
                 # Перемешиваем варианты ответов
-                random.seed(variant_num + idx)  # Для воспроизводимости
                 shuffled_options = options.copy()
                 random.shuffle(shuffled_options)
                 
