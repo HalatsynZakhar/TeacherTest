@@ -866,7 +866,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             row_cells[1].text = str(result['student_answer'])
             row_cells[2].text = str(result['correct_answer'])
             # Баллы за задание с учетом веса
-            earned_points = result.get('earned_points', 0)
+            earned_points = result.get('points', 0)
             max_points = result.get('max_points', 0)
             points = f"{format_number_with_comma(earned_points, 2)} / {format_number_with_comma(max_points, 2)}"
             row_cells[3].text = points
@@ -955,14 +955,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                             run.bold = True
                 
                 # Добавляем строки с результатами
-                points_per_question = 12 / check_result['total_questions']
                 for result in check_result['detailed_results']:
                     row_cells = table.add_row().cells
                     row_cells[0].text = str(result['question_number'])
                     row_cells[1].text = str(result['student_answer'])
                     row_cells[2].text = str(result['correct_answer'])
-                    # Баллы за задание
-                    points = format_number_with_comma(points_per_question, 2) if result['is_correct'] else "0,00"
+                    # Баллы за задание с учетом веса
+                    earned_points = result.get('points', 0)
+                    max_points = result.get('max_points', 0)
+                    points = f"{format_number_with_comma(earned_points, 2)} / {format_number_with_comma(max_points, 2)}"
                     row_cells[3].text = points
                     
                     # Результат с цветными символами
