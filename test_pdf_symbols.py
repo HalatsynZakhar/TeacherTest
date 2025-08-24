@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.processor import create_check_result_pdf
+from core.processor import create_check_result_pdf, ensure_temp_dir
 
 def test_pdf_symbols_fix():
     """Тестируем исправленное отображение результатов в PDF"""
@@ -56,7 +56,7 @@ def test_pdf_symbols_fix():
     print()
     
     # Создаем PDF с исправленным отображением
-    output_dir = os.getcwd()
+    output_dir = ensure_temp_dir("test_")
     
     try:
         pdf_path = create_check_result_pdf(test_check_result, output_dir)

@@ -10,8 +10,29 @@ from docx import Document
 from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
+import tempfile
 
 log = logging.getLogger(__name__)
+
+def ensure_temp_dir(prefix="temp_"):
+    """Создает временную папку внутри проекта"""
+    try:
+        # Получаем корневую папку проекта
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        temp_dir = os.path.join(project_root, "temp")
+        
+        # Создаем папку temp если её нет
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Создаем подпапку с префиксом
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        specific_temp_dir = os.path.join(temp_dir, f"{prefix}{timestamp}")
+        os.makedirs(specific_temp_dir, exist_ok=True)
+        
+        return specific_temp_dir
+    except Exception as e:
+        log.warning(f"Не удалось создать временную папку: {e}. Используем системную временную папку.")
+        return tempfile.gettempdir()
 
 def get_text_width(pdf: FPDF, text: str) -> float:
     """Получить ширину текста в текущем шрифте"""
@@ -472,17 +493,17 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     # Нормализуем путь и проверяем доступность
     try:
         output_dir = os.path.normpath(output_dir)
-        # Если это сетевой путь и он недоступен, используем локальную папку
+        # Если это сетевой путь и он недоступен, используем временную папку
         if output_dir.startswith('\\') and not os.path.exists(output_dir):
-            output_dir = os.path.expanduser('~/Desktop')
-            log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
+            output_dir = ensure_temp_dir("reports_")
+            log.warning(f"Сетевой путь недоступен, используем временную папку: {output_dir}")
         
         # Создаем папку если она не существует
         os.makedirs(output_dir, exist_ok=True)
         
     except Exception as e:
-        log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем текущую папку.")
-        output_dir = os.getcwd()
+        log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем временную папку.")
+        output_dir = ensure_temp_dir("reports_")
     
     # Формируем имя файла в формате Класс_ПІБ_Вариант_Дата
     student_info = check_result.get('student_info', {})
@@ -567,11 +588,11 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
         log.info(f"Создан PDF с результатами проверки: {pdf_path}")
         return pdf_path
     except Exception as e:
-        # Если ошибка связана с путем, пробуем использовать текущую папку
+        # Если ошибка связана с путем, пробуем использовать временную папку
         if 'Invalid argument' in str(e) or 'path' in str(e).lower():
             try:
-                output_dir = os.getcwd()
-                log.warning(f"Ошибка с путем PDF, используем текущую папку: {output_dir}")
+                output_dir = ensure_temp_dir("reports_")
+                log.warning(f"Ошибка с путем PDF, используем временную папку: {output_dir}")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 pdf_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.pdf")
                 pdf.output(pdf_path)
@@ -598,10 +619,10 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
     try:
         # Нормализуем путь и проверяем доступность
         output_dir = os.path.normpath(output_dir)
-        # Если это сетевой путь и он недоступен, используем локальную папку
+        # Если это сетевой путь и он недоступен, используем временную папку
         if output_dir.startswith('\\\\') and not os.path.exists(output_dir):
-            output_dir = os.path.expanduser('~/Desktop')
-            log.warning(f"Сетевой путь недоступен, используем локальную папку: {output_dir}")
+            output_dir = ensure_temp_dir("reports_")
+            log.warning(f"Сетевой путь недоступен, используем временную папку: {output_dir}")
         
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -710,11 +731,11 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         return word_path
         
     except Exception as e:
-        # Если ошибка связана с путем, пробуем использовать текущую папку
+        # Если ошибка связана с путем, пробуем использовать временную папку
         if 'Invalid argument' in str(e) or 'path' in str(e).lower():
             try:
-                output_dir = os.getcwd()
-                log.warning(f"Ошибка с путем, используем текущую папку: {output_dir}")
+                output_dir = ensure_temp_dir("reports_")
+                log.warning(f"Ошибка с путем, используем временную папку: {output_dir}")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 word_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.docx")
                 

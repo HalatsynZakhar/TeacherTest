@@ -350,7 +350,7 @@ def check_answers():
         check_result['student_info'] = student_info
         
         # Создаем отчеты с результатами
-        output_dir = get_downloads_folder()
+        output_dir = ensure_temp_dir("reports_")
         
         # Создаем PDF отчет
         pdf_report_path = create_check_result_pdf(check_result, output_dir)

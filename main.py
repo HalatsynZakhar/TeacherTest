@@ -19,6 +19,8 @@ if current_dir not in sys.path:
 from core import processor
 from utils import config_manager
 from utils.config_manager import get_downloads_folder
+import tempfile
+import shutil
 
 # Setup logging
 logging.basicConfig(
@@ -31,6 +33,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def ensure_temp_dir(prefix: str = "") -> str:
+    """Создает временную папку внутри проекта"""
+    try:
+        project_dir = os.path.dirname(__file__)
+        temp_dir = os.path.join(project_dir, "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        if prefix:
+            temp_subdir = os.path.join(temp_dir, f"{prefix}{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            os.makedirs(temp_subdir, exist_ok=True)
+            return temp_subdir
+        
+        return temp_dir
+    except Exception as e:
+        logger.warning(f"Не удалось создать временную папку: {e}. Используем системную временную папку.")
+        return tempfile.gettempdir()
+
+def cleanup_temp_files():
+    """Очистка временных файлов при запуске приложения"""
+    try:
+        project_dir = os.path.dirname(__file__)
+        temp_dir = os.path.join(project_dir, "temp")
+        
+        if os.path.exists(temp_dir):
+            import time
+            for filename in os.listdir(temp_dir):
+                file_path = os.path.join(temp_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        # Проверяем возраст файла (удаляем файлы старше 1 дня)
+                        file_age = time.time() - os.path.getmtime(file_path)
+                        if file_age > 86400:  # 24 часа в секундах
+                            os.remove(file_path)
+                            logger.info(f"Удален старый временный файл: {filename}")
+                except Exception as e:
+                    logger.warning(f"Не удалось удалить временный файл {filename}: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка при очистке временных файлов: {e}")
+
+# Очистка при запуске
+cleanup_temp_files()
+
 class TeacherTestApp:
     def __init__(self, root):
         self.root = root
@@ -39,7 +83,7 @@ class TeacherTestApp:
         
         # Переменные для хранения путей
         self.excel_file_path = tk.StringVar()
-        self.output_folder_path = tk.StringVar(value=get_downloads_folder())
+        self.output_folder_path = tk.StringVar(value=ensure_temp_dir("output_"))
         self.answer_key_file_path = tk.StringVar()
         
         # Переменные для настроек
