@@ -115,7 +115,7 @@ def init_config_manager():
         
         config_manager_instance.save_settings()
         st.session_state.config_manager = config_manager_instance
-        log.info("Менеджер конфигурации TeacherTest инициализирован")
+        log.info("Менеджер конфігурації TeacherTest ініціалізовано")
     
     return st.session_state.config_manager
 
@@ -359,7 +359,7 @@ def check_answers():
         try:
             student_answers = [x.strip() for x in st.session_state.student_answers.split(',') if x.strip()]
         except ValueError:
-            raise ValueError("Ответы должны быть разделенными запятыми")
+            raise ValueError("Відповіді повинні бути розділені комами")
         
         # Перевіряємо відповіді
         check_result = check_student_answers(

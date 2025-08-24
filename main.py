@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def ensure_temp_dir(prefix: str = "") -> str:
-    """Создает временную папку внутри проекта"""
+    """Створює тимчасову папку всередині проекту"""
     try:
         project_dir = os.path.dirname(__file__)
         temp_dir = os.path.join(project_dir, "temp")
@@ -47,11 +47,11 @@ def ensure_temp_dir(prefix: str = "") -> str:
         
         return temp_dir
     except Exception as e:
-        logger.warning(f"Не удалось создать временную папку: {e}. Используем системную временную папку.")
+        logger.warning(f"Не вдалося створити тимчасову папку: {e}. Використовуємо системну тимчасову папку.")
         return tempfile.gettempdir()
 
 def cleanup_temp_files():
-    """Очистка временных файлов при запуске приложения"""
+    """Очищення тимчасових файлів при запуску додатку"""
     try:
         project_dir = os.path.dirname(__file__)
         temp_dir = os.path.join(project_dir, "temp")
@@ -62,15 +62,15 @@ def cleanup_temp_files():
                 file_path = os.path.join(temp_dir, filename)
                 try:
                     if os.path.isfile(file_path):
-                        # Проверяем возраст файла (удаляем файлы старше 1 дня)
+                        # Перевіряємо вік файлу (видаляємо файли старші 1 дня)
                         file_age = time.time() - os.path.getmtime(file_path)
-                        if file_age > 86400:  # 24 часа в секундах
+                        if file_age > 86400:  # 24 години в секундах
                             os.remove(file_path)
-                            logger.info(f"Удален старый временный файл: {filename}")
+                            logger.info(f"Видалено старий тимчасовий файл: {filename}")
                 except Exception as e:
-                    logger.warning(f"Не удалось удалить временный файл {filename}: {e}")
+                    logger.warning(f"Не вдалося видалити тимчасовий файл {filename}: {e}")
     except Exception as e:
-        logger.error(f"Ошибка при очистке временных файлов: {e}")
+        logger.error(f"Помилка при очищенні тимчасових файлів: {e}")
 
 # Очистка при запуске
 cleanup_temp_files()
@@ -78,88 +78,88 @@ cleanup_temp_files()
 class TeacherTestApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("TeacherTest - Генератор тестов для учеников")
+        self.root.title("TeacherTest - Генератор тестів для учнів")
         self.root.geometry("800x700")
         
-        # Переменные для хранения путей
+        # Змінні для зберігання шляхів
         self.excel_file_path = tk.StringVar()
         self.output_folder_path = tk.StringVar(value=ensure_temp_dir("output_"))
         self.answer_key_file_path = tk.StringVar()
         
-        # Переменные для настроек
+        # Змінні для налаштувань
         self.num_variants = tk.IntVar(value=10)
         self.variant_number = tk.IntVar(value=1)
         self.student_answers_text = tk.StringVar()
         
-        # Режим работы (1 - генерация тестов, 2 - проверка работ)
+        # Режим роботи (1 - генерація тестів, 2 - перевірка робіт)
         self.mode = tk.IntVar(value=1)
         
         self.setup_ui()
         
     def setup_ui(self):
-        """Настройка пользовательского интерфейса"""
-        # Главный фрейм
+        """Налаштування користувацького інтерфейсу"""
+        # Головний фрейм
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Настройка растягивания
+        # Налаштування розтягування
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
         # Заголовок
-        title_label = ttk.Label(main_frame, text="TeacherTest - Генератор тестов", font=('Arial', 16, 'bold'))
+        title_label = ttk.Label(main_frame, text="TeacherTest - Генератор тестів", font=('Arial', 16, 'bold'))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        # Выбор режима работы
-        mode_frame = ttk.LabelFrame(main_frame, text="Режим работы", padding="10")
+        # Вибір режиму роботи
+        mode_frame = ttk.LabelFrame(main_frame, text="Режим роботи", padding="10")
         mode_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        ttk.Radiobutton(mode_frame, text="Режим 1: Генерация тестов", variable=self.mode, value=1, command=self.on_mode_change).grid(row=0, column=0, sticky=tk.W)
-        ttk.Radiobutton(mode_frame, text="Режим 2: Проверка работ", variable=self.mode, value=2, command=self.on_mode_change).grid(row=0, column=1, sticky=tk.W)
+        ttk.Radiobutton(mode_frame, text="Режим 1: Генерація тестів", variable=self.mode, value=1, command=self.on_mode_change).grid(row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(mode_frame, text="Режим 2: Перевірка робіт", variable=self.mode, value=2, command=self.on_mode_change).grid(row=0, column=1, sticky=tk.W)
         
-        # Фрейм для режима 1 (генерация тестов)
-        self.mode1_frame = ttk.LabelFrame(main_frame, text="Генерация тестов", padding="10")
+        # Фрейм для режиму 1 (генерація тестів)
+        self.mode1_frame = ttk.LabelFrame(main_frame, text="Генерація тестів", padding="10")
         self.mode1_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         self.mode1_frame.columnconfigure(1, weight=1)
         
-        # Выбор Excel файла с вопросами
-        ttk.Label(self.mode1_frame, text="Excel файл с вопросами:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        # Вибір Excel файлу з питаннями
+        ttk.Label(self.mode1_frame, text="Excel файл з питаннями:").grid(row=0, column=0, sticky=tk.W, pady=2)
         ttk.Entry(self.mode1_frame, textvariable=self.excel_file_path, width=50).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
-        ttk.Button(self.mode1_frame, text="Обзор", command=self.browse_excel_file).grid(row=0, column=2, pady=2)
+        ttk.Button(self.mode1_frame, text="Огляд", command=self.browse_excel_file).grid(row=0, column=2, pady=2)
         
-        # Количество вариантов
-        ttk.Label(self.mode1_frame, text="Количество вариантов:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        # Кількість варіантів
+        ttk.Label(self.mode1_frame, text="Кількість варіантів:").grid(row=1, column=0, sticky=tk.W, pady=2)
         ttk.Spinbox(self.mode1_frame, from_=1, to=100, textvariable=self.num_variants, width=10).grid(row=1, column=1, sticky=tk.W, padx=(5, 0), pady=2)
         
-        # Папка для сохранения
-        ttk.Label(self.mode1_frame, text="Папка для сохранения:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        # Папка для збереження
+        ttk.Label(self.mode1_frame, text="Папка для збереження:").grid(row=2, column=0, sticky=tk.W, pady=2)
         ttk.Entry(self.mode1_frame, textvariable=self.output_folder_path, width=50).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
-        ttk.Button(self.mode1_frame, text="Обзор", command=self.browse_output_folder).grid(row=2, column=2, pady=2)
+        ttk.Button(self.mode1_frame, text="Огляд", command=self.browse_output_folder).grid(row=2, column=2, pady=2)
         
-        # Кнопка генерации
-        ttk.Button(self.mode1_frame, text="Сгенерировать тесты", command=self.generate_tests).grid(row=3, column=0, columnspan=3, pady=10)
+        # Кнопка генерації
+        ttk.Button(self.mode1_frame, text="Згенерувати тести", command=self.generate_tests).grid(row=3, column=0, columnspan=3, pady=10)
         
-        # Фрейм для режима 2 (проверка работ)
-        self.mode2_frame = ttk.LabelFrame(main_frame, text="Проверка работ", padding="10")
+        # Фрейм для режиму 2 (перевірка робіт)
+        self.mode2_frame = ttk.LabelFrame(main_frame, text="Перевірка робіт", padding="10")
         self.mode2_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         self.mode2_frame.columnconfigure(1, weight=1)
         
-        # Файл-ключ с ответами
+        # Файл-ключ з відповідями
         ttk.Label(self.mode2_frame, text="Excel файл-ключ:").grid(row=0, column=0, sticky=tk.W, pady=2)
         ttk.Entry(self.mode2_frame, textvariable=self.answer_key_file_path, width=50).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
-        ttk.Button(self.mode2_frame, text="Обзор", command=self.browse_answer_key_file).grid(row=0, column=2, pady=2)
+        ttk.Button(self.mode2_frame, text="Огляд", command=self.browse_answer_key_file).grid(row=0, column=2, pady=2)
         
-        # Номер варианта ученика
-        ttk.Label(self.mode2_frame, text="Номер варианта ученика:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        # Номер варіанту учня
+        ttk.Label(self.mode2_frame, text="Номер варіанту учня:").grid(row=1, column=0, sticky=tk.W, pady=2)
         ttk.Spinbox(self.mode2_frame, from_=1, to=100, textvariable=self.variant_number, width=10).grid(row=1, column=1, sticky=tk.W, padx=(5, 0), pady=2)
         
-        # Ответы ученика
-        ttk.Label(self.mode2_frame, text="Ответы ученика (через запятую):").grid(row=2, column=0, sticky=tk.W, pady=2)
+        # Відповіді учня
+        ttk.Label(self.mode2_frame, text="Відповіді учня (через кому):").grid(row=2, column=0, sticky=tk.W, pady=2)
         ttk.Entry(self.mode2_frame, textvariable=self.student_answers_text, width=50).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
         
-        # Кнопка проверки
-        ttk.Button(self.mode2_frame, text="Проверить работу", command=self.check_answers).grid(row=3, column=0, columnspan=3, pady=10)
+        # Кнопка перевірки
+        ttk.Button(self.mode2_frame, text="Перевірити роботу", command=self.check_answers).grid(row=3, column=0, columnspan=3, pady=10)
         
         # Прогресс-бар
         self.progress_var = tk.DoubleVar()
@@ -167,12 +167,12 @@ class TeacherTestApp:
         self.progress_bar.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 5))
         
         # Статус
-        self.status_var = tk.StringVar(value="Готов к работе")
+        self.status_var = tk.StringVar(value="Готовий до роботи")
         self.status_label = ttk.Label(main_frame, textvariable=self.status_var)
         self.status_label.grid(row=5, column=0, columnspan=3, pady=5)
         
         # Лог
-        log_frame = ttk.LabelFrame(main_frame, text="Лог операций", padding="5")
+        log_frame = ttk.LabelFrame(main_frame, text="Журнал операцій", padding="5")
         log_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
@@ -181,11 +181,11 @@ class TeacherTestApp:
         self.log_text = scrolledtext.ScrolledText(log_frame, height=10, width=80)
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Изначально показываем только режим 1
+        # Спочатку показуємо тільки режим 1
         self.on_mode_change()
         
     def on_mode_change(self):
-        """Обработчик смены режима работы"""
+        """Обробник зміни режиму роботи"""
         if self.mode.get() == 1:
             self.mode1_frame.grid()
             self.mode2_frame.grid_remove()
@@ -194,216 +194,216 @@ class TeacherTestApp:
             self.mode2_frame.grid()
     
     def browse_excel_file(self):
-        """Выбор Excel файла с вопросами"""
+        """Вибір Excel файлу з питаннями"""
         filename = filedialog.askopenfilename(
-            title="Выберите Excel файл с вопросами",
+            title="Виберіть Excel файл з питаннями",
             filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
         )
         if filename:
             self.excel_file_path.set(filename)
     
     def browse_answer_key_file(self):
-        """Выбор Excel файла-ключа"""
+        """Вибір Excel файлу-ключа"""
         filename = filedialog.askopenfilename(
-            title="Выберите Excel файл-ключ",
+            title="Виберіть Excel файл-ключ",
             filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
         )
         if filename:
             self.answer_key_file_path.set(filename)
     
     def browse_output_folder(self):
-        """Выбор папки для сохранения"""
-        folder = filedialog.askdirectory(title="Выберите папку для сохранения")
+        """Вибір папки для збереження"""
+        folder = filedialog.askdirectory(title="Виберіть папку для збереження")
         if folder:
             self.output_folder_path.set(folder)
     
     def log_message(self, message):
-        """Добавление сообщения в лог"""
+        """Додавання повідомлення в журнал"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.root.update_idletasks()
     
     def update_progress(self, current, total, extra_info=""):
-        """Обновление прогресс-бара"""
+        """Оновлення прогрес-бару"""
         if total > 0:
             progress = (current / total) * 100
             self.progress_var.set(progress)
-            status_text = f"Прогресс: {current}/{total}"
+            status_text = f"Прогрес: {current}/{total}"
             if extra_info:
                 status_text += f" - {extra_info}"
             self.status_var.set(status_text)
         self.root.update_idletasks()
     
     def generate_tests(self):
-        """Генерация тестов"""
-        # Проверка входных данных
+        """Генерація тестів"""
+        # Перевірка вхідних даних
         if not self.excel_file_path.get():
-            messagebox.showerror("Ошибка", "Выберите Excel файл с вопросами")
+            messagebox.showerror("Помилка", "Виберіть Excel файл з питаннями")
             return
         
         if not os.path.exists(self.excel_file_path.get()):
-            messagebox.showerror("Ошибка", "Выбранный Excel файл не существует")
+            messagebox.showerror("Помилка", "Вибраний Excel файл не існує")
             return
         
         if not self.output_folder_path.get():
-            messagebox.showerror("Ошибка", "Выберите папку для сохранения")
+            messagebox.showerror("Помилка", "Виберіть папку для збереження")
             return
         
         if self.num_variants.get() < 1:
-            messagebox.showerror("Ошибка", "Количество вариантов должно быть больше 0")
+            messagebox.showerror("Помилка", "Кількість варіантів повинна бути більше 0")
             return
         
-        # Запуск генерации в отдельном потоке
+        # Запуск генерації в окремому потоці
         thread = threading.Thread(target=self._generate_tests_thread)
         thread.daemon = True
         thread.start()
     
     def _generate_tests_thread(self):
-        """Поток для генерации тестов"""
+        """Потік для генерації тестів"""
         try:
-            self.log_message("Начало генерации тестов...")
-            self.status_var.set("Генерация тестов...")
+            self.log_message("Початок генерації тестів...")
+            self.status_var.set("Генерація тестів...")
             
-            # Чтение Excel файла
-            self.log_message(f"Чтение файла: {self.excel_file_path.get()}")
+            # Читання Excel файлу
+            self.log_message(f"Читання файлу: {self.excel_file_path.get()}")
             df = processor.read_test_excel(self.excel_file_path.get())
             
             if df.empty:
-                raise ValueError("Excel файл не содержит данных")
+                raise ValueError("Excel файл не містить даних")
             
-            self.log_message(f"Найдено {len(df)} вопросов")
+            self.log_message(f"Знайдено {len(df)} питань")
             
-            # Генерация вариантов
-            self.log_message(f"Генерация {self.num_variants.get()} вариантов...")
+            # Генерація варіантів
+            self.log_message(f"Генерація {self.num_variants.get()} варіантів...")
             variants = processor.generate_test_variants(df, self.num_variants.get())
             
-            # PDF файлы отключены - используем только Word и Excel
+            # PDF файли відключені - використовуємо тільки Word та Excel
             
-            # Создание Excel файла-ключа
-            self.log_message("Создание Excel файла-ключа...")
+            # Створення Excel файлу-ключа
+            self.log_message("Створення Excel файлу-ключа...")
             input_file_name = os.path.splitext(os.path.basename(self.excel_file_path.get()))[0]
             excel_key_path = processor.create_excel_answer_key(variants, self.output_folder_path.get(), input_file_name)
             
-            self.log_message(f"Готово! Созданы файлы:")
+            self.log_message(f"Готово! Створені файли:")
             self.log_message(f"- Excel ключ: {excel_key_path}")
             
-            self.status_var.set("Генерация завершена успешно")
+            self.status_var.set("Генерація завершена успішно")
             self.progress_var.set(100)
             
-            # Показываем сообщение об успехе
+            # Показуємо повідомлення про успіх
             self.root.after(0, lambda: messagebox.showinfo(
-                "Успех", 
-                f"Тесты успешно сгенерированы!\n\n"
-                f"Файлы сохранены в: {self.output_folder_path.get()}"
+                "Успіх", 
+                f"Тести успішно згенеровано!\n\n"
+                f"Файли збережено в: {self.output_folder_path.get()}"
             ))
             
         except Exception as e:
-            error_msg = f"Ошибка при генерации тестов: {str(e)}"
+            error_msg = f"Помилка при генерації тестів: {str(e)}"
             self.log_message(error_msg)
             logger.error(error_msg, exc_info=True)
-            self.status_var.set("Ошибка генерации")
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", error_msg))
+            self.status_var.set("Помилка генерації")
+            self.root.after(0, lambda: messagebox.showerror("Помилка", error_msg))
     
     def check_answers(self):
-        """Проверка ответов ученика"""
-        # Проверка входных данных
+        """Перевірка відповідей учня"""
+        # Перевірка вхідних даних
         if not self.answer_key_file_path.get():
-            messagebox.showerror("Ошибка", "Выберите Excel файл-ключ")
+            messagebox.showerror("Помилка", "Виберіть Excel файл-ключ")
             return
         
         if not os.path.exists(self.answer_key_file_path.get()):
-            messagebox.showerror("Ошибка", "Выбранный файл-ключ не существует")
+            messagebox.showerror("Помилка", "Вибраний файл-ключ не існує")
             return
         
         if self.variant_number.get() < 1:
-            messagebox.showerror("Ошибка", "Номер варианта должен быть больше 0")
+            messagebox.showerror("Помилка", "Номер варіанту повинен бути більше 0")
             return
         
         if not self.student_answers_text.get().strip():
-            messagebox.showerror("Ошибка", "Введите ответы ученика")
+            messagebox.showerror("Помилка", "Введіть відповіді учня")
             return
         
-        # Запуск проверки в отдельном потоке
+        # Запуск перевірки в окремому потоці
         thread = threading.Thread(target=self._check_answers_thread)
         thread.daemon = True
         thread.start()
     
     def _check_answers_thread(self):
-        """Поток для проверки ответов"""
+        """Потік для перевірки відповідей"""
         try:
-            self.log_message("Начало проверки ответов...")
-            self.status_var.set("Проверка ответов...")
+            self.log_message("Початок перевірки відповідей...")
+            self.status_var.set("Перевірка відповідей...")
             
-            # Парсинг ответов ученика
+            # Парсинг відповідей учня
             answers_text = self.student_answers_text.get().strip()
             try:
                 student_answers = [x.strip() for x in answers_text.split(',') if x.strip()]
             except ValueError:
-                raise ValueError("Ответы должны быть разделенными запятыми")
+                raise ValueError("Відповіді повинні бути розділені комами")
             
-            self.log_message(f"Ответы ученика: {student_answers}")
+            self.log_message(f"Відповіді учня: {student_answers}")
             
-            # Проверка ответов
+            # Перевірка відповідей
             check_result = processor.check_student_answers(
                 self.answer_key_file_path.get(),
                 self.variant_number.get(),
                 student_answers
             )
             
-            # Создаем отчеты с результатами
-            self.log_message("Создание отчетов...")
+            # Створюємо звіти з результатами
+            self.log_message("Створення звітів...")
             
-            # Создаем PDF отчет
+            # Створюємо PDF звіт
             pdf_report_path = processor.create_check_result_pdf(check_result, self.output_folder_path.get())
-            self.log_message(f"PDF отчет создан: {pdf_report_path}")
+            self.log_message(f"PDF звіт створено: {pdf_report_path}")
             
-            # Создаем Word отчет
+            # Створюємо Word звіт
             word_report_path = processor.create_check_result_word(check_result, self.output_folder_path.get())
-            self.log_message(f"Word отчет создан: {word_report_path}")
+            self.log_message(f"Word звіт створено: {word_report_path}")
             
-            # Вывод результатов
+            # Виведення результатів
             weighted_score = check_result.get('weighted_score', 0)
             max_score = check_result.get('max_score', 12)
-            self.log_message(f"Результат проверки:")
-            self.log_message(f"- Вариант: {check_result['variant_number']}")
-            self.log_message(f"- Всего вопросов: {check_result['total_questions']}")
-            self.log_message(f"- Правильных ответов: {check_result['correct_answers']}")
-            self.log_message(f"- Процент: {check_result['score_percentage']:.1f}%")
+            self.log_message(f"Результат перевірки:")
+            self.log_message(f"- Варіант: {check_result['variant_number']}")
+            self.log_message(f"- Всього питань: {check_result['total_questions']}")
+            self.log_message(f"- Правильних відповідей: {check_result['correct_answers']}")
+            self.log_message(f"- Відсоток: {check_result['score_percentage']:.1f}%")
             self.log_message(f"- Бали: {weighted_score:.2f} з {max_score}")
             
-            self.status_var.set("Проверка завершена")
+            self.status_var.set("Перевірка завершена")
             
-            # Показываем результат
+            # Показуємо результат
             result_text = (
-                f"Проверка завершена!\n\n"
-                f"Вариант: {check_result['variant_number']}\n"
-                f"Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}\n"
-                f"Процент: {check_result['score_percentage']:.1f}%\n"
+                f"Перевірка завершена!\n\n"
+                f"Варіант: {check_result['variant_number']}\n"
+                f"Правильних відповідей: {check_result['correct_answers']} з {check_result['total_questions']}\n"
+                f"Відсоток: {check_result['score_percentage']:.1f}%\n"
                 f"Бали: {weighted_score:.2f} з {max_score}\n\n"
-                f"Созданы отчеты:\n"
+                f"Створено звіти:\n"
                 f"- PDF: {os.path.basename(pdf_report_path)}\n"
                 f"- Word: {os.path.basename(word_report_path)}"
             )
             
-            self.root.after(0, lambda: messagebox.showinfo("Результат проверки", result_text))
+            self.root.after(0, lambda: messagebox.showinfo("Результат перевірки", result_text))
             
         except Exception as e:
-            error_msg = f"Ошибка при проверке ответов: {str(e)}"
+            error_msg = f"Помилка при перевірці відповідей: {str(e)}"
             self.log_message(error_msg)
             logger.error(error_msg, exc_info=True)
-            self.status_var.set("Ошибка проверки")
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", error_msg))
+            self.status_var.set("Помилка перевірки")
+            self.root.after(0, lambda: messagebox.showerror("Помилка", error_msg))
 
 def main():
-    """Главная функция приложения"""
+    """Головна функція додатку"""
     try:
         root = tk.Tk()
         app = TeacherTestApp(root)
         root.mainloop()
     except Exception as e:
-        logger.error(f"Критическая ошибка приложения: {e}", exc_info=True)
-        messagebox.showerror("Критическая ошибка", f"Произошла критическая ошибка: {e}")
+        logger.error(f"Критична помилка додатку: {e}", exc_info=True)
+        messagebox.showerror("Критична помилка", f"Сталася критична помилка: {e}")
 
 if __name__ == "__main__":
     main()
