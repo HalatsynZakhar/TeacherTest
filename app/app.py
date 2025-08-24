@@ -199,6 +199,8 @@ if 'student_answers' not in st.session_state:
     st.session_state.student_answers = ""
 if 'answer_format' not in st.session_state:
     st.session_state.answer_format = 'list'  # 'list' или 'table'
+if 'space_optimization' not in st.session_state:
+    st.session_state.space_optimization = False  # Оптимизация места
 if 'student_class' not in st.session_state:
     st.session_state.student_class = ""
 if 'student_full_name' not in st.session_state:
@@ -298,7 +300,7 @@ def generate_tests():
         add_log_message(f"Создан Excel файл-ключ")
         
         # Создаем Word файл с тестами
-        test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format)
+        test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format, st.session_state.space_optimization)
         add_log_message(f"Создан Word файл с тестами")
         
         # Создаем Word файл с ответами
@@ -408,6 +410,12 @@ def main():
                 format_func=lambda x: 'Список' if x == 'list' else 'Таблиця',
                 index=0 if st.session_state.answer_format == 'list' else 1,
                 help="Виберіть формат відображення варіантів відповідей: список або таблиця"
+            )
+            
+            st.session_state.space_optimization = st.checkbox(
+                "Оптимізація місця",
+                value=st.session_state.space_optimization,
+                help="Мінімізує кількість переводів рядків для економії місця (може погіршити читабельність)"
             )
         else:
             st.subheader("Налаштування перевірки")

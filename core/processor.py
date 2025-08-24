@@ -824,7 +824,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             raise
 
 
-def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list") -> str:
+def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list", space_optimization: bool = False) -> str:
     """Создать Word документ с тестами для всех вариантов
     
     Args:
@@ -833,6 +833,7 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
         columns: Количество колонок для размещения вопросов (всегда 1)
         input_file_name: Имя входного файла
         answer_format: Формат вариантов ответов ('list' или 'table')
+        space_optimization: Минимизировать переводы строк для экономии места
     """
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -860,7 +861,8 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             instruction = doc.add_paragraph("Інструкція: Оберіть правильну відповідь для кожного питання.")
             instruction.alignment = WD_ALIGN_PARAGRAPH.LEFT
             
-            doc.add_paragraph()  # Пустая строка
+            if not space_optimization:
+                doc.add_paragraph()  # Пустая строка
             
             # Вопросы в одноколоночной компоновке
             for i, question in enumerate(variant['questions'], 1):
@@ -894,7 +896,8 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         option_para = doc.add_paragraph(f"   {j}) {option}")
                         option_para.style = 'Normal'
                 
-                doc.add_paragraph()  # Пустая строка между вопросами
+                if not space_optimization:
+                    doc.add_paragraph()  # Пустая строка между вопросами
             
             # Таблица для ответов - сразу после теста, без разрыва страницы
             # Всегда по 15 элементов в строке, последняя строка дополняется пустыми ячейками
@@ -954,7 +957,7 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                             tcPr.append(tcBorders)
                 
                 # Добавляем небольшой отступ между строками таблиц
-                if row_idx < num_rows - 1:
+                if row_idx < num_rows - 1 and not space_optimization:
                     doc.add_paragraph()
             
             # Разрыв страницы между вариантами (кроме последнего)
