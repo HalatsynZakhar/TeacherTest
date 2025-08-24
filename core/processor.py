@@ -166,18 +166,36 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         if test_mask.any():
             # Спочатку перетворюємо в числа для валідації
             numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
-            # Видаляємо тестові питання з некоректними відповідями
-            valid_test_mask = test_mask & numeric_answers.notna()
-            df = df[~(test_mask & numeric_answers.isna())]
+            
+            # Перевіряємо чи правильна відповідь є числом
+            invalid_numeric_mask = test_mask & numeric_answers.isna()
+            if invalid_numeric_mask.any():
+                invalid_questions = df[invalid_numeric_mask][['question_number', 'question', 'correct_answer']].values.tolist()
+                error_details = []
+                for q_num, q_text, answer in invalid_questions[:5]:  # Показуємо перші 5 помилок
+                    error_details.append(f"Питання {q_num}: '{q_text[:50]}...' - некоректна відповідь '{answer}'")
+                error_msg = f"Знайдено тестові завдання з некоректними відповідями (повинні бути числами):\n" + "\n".join(error_details)
+                if len(invalid_questions) > 5:
+                    error_msg += f"\n... та ще {len(invalid_questions) - 5} питань"
+                raise ValueError(error_msg)
+            
+            # Перевіряємо чи правильна відповідь існує серед варіантів
+            for idx in df[test_mask].index:
+                answer_num = int(numeric_answers.loc[idx])
+                option_count = df.loc[idx, 'option_count']
+                
+                if answer_num < 1 or answer_num > option_count:
+                    q_num = df.loc[idx, 'question_number']
+                    q_text = df.loc[idx, 'question']
+                    raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - правильна відповідь {answer_num} не існує серед варіантів (доступно варіантів: {option_count})")
             
             # Форматуємо правильні відповіді для тестових завдань (прибираємо .0 для цілих чисел)
-            for idx in df[valid_test_mask].index:
-                if idx in df.index:  # Перевіряємо, що індекс ще існує після фільтрації
-                    answer_value = numeric_answers.loc[idx]
-                    if answer_value == int(answer_value):
-                        df.at[idx, 'correct_answer'] = str(int(answer_value))
-                    else:
-                        df.at[idx, 'correct_answer'] = str(answer_value)
+            for idx in df[test_mask].index:
+                answer_value = numeric_answers.loc[idx]
+                if answer_value == int(answer_value):
+                    df.at[idx, 'correct_answer'] = str(int(answer_value))
+                else:
+                    df.at[idx, 'correct_answer'] = str(answer_value)
         
         # Для відкритих завдань зберігаємо правильну відповідь як текст
         open_mask = ~df['is_test_question'] & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
@@ -196,6 +214,11 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         
         # Приводимо стовпець correct_answer до строкового типу для сумісності з PyArrow
         df['correct_answer'] = df['correct_answer'].astype(str)
+        
+        # Приводимо всі option_ колонки до строкового типу для сумісності з PyArrow
+        option_cols = [col for col in df.columns if col.startswith('option_')]
+        for col in option_cols:
+            df[col] = df[col].astype(str)
         
         log.info(f"Завантажено {len(df)} питань з файлу {file_path}")
         return df
@@ -1308,6 +1331,28 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             raise
 
 
+def format_option_value(value):
+    """Форматирует значение варианта ответа, убирая дробные части для целых чисел"""
+    if isinstance(value, (int, float)):
+        try:
+            # Проверяем, является ли число целым
+            if float(value) == int(float(value)):
+                return str(int(float(value)))
+            else:
+                return f"{float(value):.10g}".replace('.', ',')
+        except (ValueError, TypeError):
+            return str(value).strip()
+    else:
+        # Для строковых значений пытаемся преобразовать в число
+        try:
+            num_value = float(str(value).replace(',', '.'))
+            if num_value == int(num_value):
+                return str(int(num_value))
+            else:
+                return f"{num_value:.10g}".replace('.', ',')
+        except (ValueError, TypeError):
+            return str(value).strip()
+
 def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list", space_optimization: bool = False, test_class: str = "", test_date: str = "") -> str:
     """Создать Word документ с тестами для всех вариантов
     
@@ -1409,12 +1454,16 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         # Заполняем ячейки вариантами ответов
                         cells = table.rows[0].cells
                         for j, option in enumerate(options):
-                            cells[j].text = f"{j + 1}) {option}"
+                            # Форматируем числовые значения правильно
+                            formatted_option = format_option_value(option)
+                            cells[j].text = f"{j + 1}) {formatted_option}"
                             cells[j].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     else:
                         # Списочный формат - обычные варианты ответов
                         for j, option in enumerate(question['options'], 1):
-                            option_para = doc.add_paragraph(f"   {j}) {option}")
+                            # Форматируем числовые значения правильно
+                            formatted_option = format_option_value(option)
+                            option_para = doc.add_paragraph(f"   {j}) {formatted_option}")
                             option_para.style = 'Normal'
                 else:
                     # Нетестовое задание - место для ответа
@@ -1553,6 +1602,75 @@ def read_test_word(file_path: str) -> pd.DataFrame:
             raise ValueError("Не вдалося знайти питання в Word документі")
         
         df = pd.DataFrame(questions_data)
+        
+        # Додаємо номери питань
+        df['question_number'] = range(1, len(df) + 1)
+        
+        # Додаємо вагу питань (за замовчуванням 1)
+        df['weight'] = 1
+        
+        # Рахуємо кількість варіантів відповідей для кожного питання
+        df['option_count'] = 0
+        for idx, row in df.iterrows():
+            count = 0
+            for i in range(1, 5):  # option_1 до option_4
+                if row[f'option_{i}'] and str(row[f'option_{i}']).strip():
+                    count += 1
+            df.at[idx, 'option_count'] = count
+        
+        # Конвертуємо option_ колонки в рядки для сумісності з pyarrow
+        option_cols = [col for col in df.columns if col.startswith('option_')]
+        for col in option_cols:
+            df[col] = df[col].astype(str)
+        
+        # Визначаємо тип питання (тестове чи відкрите)
+        df['is_test_question'] = (df['option_count'] >= 2) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        
+        # Приводимо стовпець correct_answer до object типу для уникнення попереджень
+        df['correct_answer'] = df['correct_answer'].astype('object')
+        
+        # Для тестових завдань перевіряємо правильні відповіді
+        test_mask = df['is_test_question']
+        if test_mask.any():
+            # Спочатку перетворюємо в числа для валідації
+            numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
+            
+            # Перевіряємо чи правильна відповідь є числом
+            invalid_numeric_mask = test_mask & numeric_answers.isna()
+            if invalid_numeric_mask.any():
+                invalid_questions = df[invalid_numeric_mask][['question_number', 'question', 'correct_answer']].values.tolist()
+                error_details = []
+                for q_num, q_text, answer in invalid_questions[:5]:  # Показуємо перші 5 помилок
+                    error_details.append(f"Питання {q_num}: '{q_text[:50]}...' - некоректна відповідь '{answer}'")
+                error_msg = f"Знайдено тестові завдання з некоректними відповідями (повинні бути числами):\n" + "\n".join(error_details)
+                if len(invalid_questions) > 5:
+                    error_msg += f"\n... та ще {len(invalid_questions) - 5} питань"
+                raise ValueError(error_msg)
+            
+            # Перевіряємо чи правильна відповідь існує серед варіантів
+            for idx in df[test_mask].index:
+                answer_num = int(numeric_answers.loc[idx])
+                option_count = df.loc[idx, 'option_count']
+                
+                if answer_num < 1 or answer_num > option_count:
+                    q_num = df.loc[idx, 'question_number']
+                    q_text = df.loc[idx, 'question']
+                    raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - правильна відповідь {answer_num} не існує серед варіантів (доступно варіантів: {option_count})")
+            
+            # Форматуємо правильні відповіді для тестових завдань (прибираємо .0 для цілих чисел)
+            for idx in df[test_mask].index:
+                answer_value = numeric_answers.loc[idx]
+                if answer_value == int(answer_value):
+                    df.at[idx, 'correct_answer'] = str(int(answer_value))
+                else:
+                    df.at[idx, 'correct_answer'] = str(answer_value)
+        
+        # Для відкритих завдань зберігаємо правильну відповідь як текст
+        open_mask = ~df['is_test_question']
+        if open_mask.any():
+            for idx in df[open_mask].index:
+                df.at[idx, 'correct_answer'] = str(df.at[idx, 'correct_answer'])
+        
         log.info(f"З Word документа завантажено {len(df)} питань")
         return df
         

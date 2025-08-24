@@ -587,6 +587,10 @@ def main():
                     display_df = st.session_state.df.head(10).copy()
                     for col in display_df.select_dtypes(include=['object']).columns:
                         display_df[col] = display_df[col].astype(str)
+                    # Дополнительно конвертируем option_ колонки в строки для совместимости с pyarrow
+                    option_cols = [col for col in display_df.columns if col.startswith('option_')]
+                    for col in option_cols:
+                        display_df[col] = display_df[col].astype(str)
                     st.dataframe(display_df, use_container_width=True)
                 
                 # Кнопка генерации
