@@ -1014,12 +1014,14 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             # Заголовок вопроса
             question_heading = doc.add_heading(f'Питання {result["question_number"]}', level=3)
             
-            # Текст вопроса (если доступен)
-            question_text = result.get('question_text', '')
+            # Текст вопроса
+            question_text = result.get('question_text', f'Питання {i+1}')
             if question_text:
                 question_para = doc.add_paragraph()
                 question_para.add_run('Текст питання: ').bold = True
                 question_para.add_run(question_text)
+            
+
             
             # Тип вопроса
             question_type = result.get('question_type', 'Невідомий')
@@ -1038,52 +1040,97 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 options_para = doc.add_paragraph()
                 options_para.add_run('Варіанти відповідей:').bold = True
                 
+                student_answer_num = None
+                correct_answer_num = None
+                try:
+                    student_answer_num = int(result['student_answer'])
+                    correct_answer_num = int(result['correct_answer'])
+                except (ValueError, TypeError):
+                    pass
+                
                 for j, option in enumerate(question_options, 1):
-                    option_para = doc.add_paragraph(f'{j}. {option}', style='List Number')
-                    # Выделяем правильный вариант зеленым
-                    try:
-                        correct_answer_num = int(result['correct_answer'])
-                        if j == correct_answer_num:
-                            for run in option_para.runs:
-                                run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
-                                run.bold = True
-                    except (ValueError, TypeError):
-                        pass
+                    # Форматируем число правильно
+                    if isinstance(option, (int, float)):
+                        if option == int(option):
+                            formatted_option = str(int(option))
+                        else:
+                            formatted_option = f"{option:.10g}".replace('.', ',')
+                    else:
+                        formatted_option = str(option)
+                    
+                    option_para = doc.add_paragraph()
+                    option_text = f'{j}. {formatted_option}'
+                    
+                    # Добавляем информацию о выборе ученика и правильном ответе
+                    if j == student_answer_num and j == correct_answer_num:
+                        option_text += ' (Учень обрав - ПРАВИЛЬНО)'
+                    elif j == student_answer_num:
+                        option_text += ' (Учень обрав - НЕПРАВИЛЬНО)'
+                    elif j == correct_answer_num:
+                        option_text += ' (Правильна відповідь)'
+                    
+                    option_run = option_para.add_run(option_text)
+                    
+                    # Цветовое выделение
+                    if j == correct_answer_num:
+                        option_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый для правильного
+                        option_run.bold = True
+                    elif j == student_answer_num:
+                        option_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный для неправильного выбора ученика
+                        option_run.bold = True
             
-            # Ответы
-            answers_para = doc.add_paragraph()
-            answers_para.add_run('Відповіді:').bold = True
-            
-            # Ответ ученика
-            student_para = doc.add_paragraph()
-            student_para.add_run('Відповідь учня: ').bold = True
-            student_run = student_para.add_run(str(result['student_answer']))
-            
-            # Правильный ответ
-            correct_para = doc.add_paragraph()
-            correct_para.add_run('Правильна відповідь: ').bold = True
-            correct_run = correct_para.add_run(str(result['correct_answer']))
-            correct_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
-            correct_run.bold = True
+            # Для відкритих питань додаємо інформацію про відповіді
+            if not result.get('is_test_question'):
+                answers_para = doc.add_paragraph()
+                
+                # Форматируем ответы правильно
+                student_answer = result['student_answer']
+                correct_answer = result['correct_answer']
+                
+                # Применяем правильное форматирование чисел
+                if isinstance(student_answer, (int, float)):
+                    if student_answer == int(student_answer):
+                        formatted_student = str(int(student_answer))
+                    else:
+                        formatted_student = f"{student_answer:.10g}".replace('.', ',')
+                else:
+                    formatted_student = str(student_answer)
+                
+                if isinstance(correct_answer, (int, float)):
+                    if correct_answer == int(correct_answer):
+                        formatted_correct = str(int(correct_answer))
+                    else:
+                        formatted_correct = f"{correct_answer:.10g}".replace('.', ',')
+                else:
+                    formatted_correct = str(correct_answer)
+                
+                answers_para.add_run('Відповіді: ').bold = True
+                answers_para.add_run('Учень обрав: ')
+                
+                student_run = answers_para.add_run(f'({formatted_student})')
+                if result['is_correct']:
+                    student_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                else:
+                    student_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
+                student_run.bold = True
+                
+                answers_para.add_run(', правильна відповідь: ')
+                correct_run = answers_para.add_run(f'({formatted_correct})')
+                correct_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                correct_run.bold = True
             
             # Результат с цветовым выделением
             result_para = doc.add_paragraph()
             result_para.add_run('Результат: ').bold = True
             
             if result['is_correct']:
-                result_run = result_para.add_run('✓ ПРАВИЛЬНО')
-                result_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
-                result_run.bold = True
-                # Выделяем ответ ученика зеленым, если правильный
-                student_run.font.color.rgb = RGBColor(0, 128, 0)
-                student_run.bold = True
+                 result_run = result_para.add_run('✓ ПРАВИЛЬНО')
+                 result_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                 result_run.bold = True
             else:
                 result_run = result_para.add_run('✗ НЕПРАВИЛЬНО')
                 result_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
                 result_run.bold = True
-                # Выделяем ответ ученика красным, если неправильный
-                student_run.font.color.rgb = RGBColor(255, 0, 0)
-                student_run.bold = True
             
             # Баллы
             earned_points = result.get('points', 0)
@@ -1099,12 +1146,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 points_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
             points_run.bold = True
             
-            # Вес вопроса
-            weight = result.get('weight', 0)
-            if weight:
-                weight_para = doc.add_paragraph()
-                weight_para.add_run('Вага питання: ').bold = True
-                weight_para.add_run(str(weight))
+
             
             # Разделитель между вопросами
             if i < len(check_result['detailed_results']):
