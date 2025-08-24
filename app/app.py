@@ -90,6 +90,12 @@ default_settings = {
     },
     "file_settings": {
         "max_size_mb": 50
+    },
+    "user_paths": {
+        "results_excel_path": "",
+        "results_excel_filename": "results.xlsx",
+        "last_answer_key_file": "",
+        "save_results_path": ""
     }
 }
 
@@ -113,6 +119,19 @@ def init_config_manager():
         
         if not config_manager_instance.get_setting('file_settings.max_size_mb'):
             config_manager_instance.set_setting('file_settings.max_size_mb', default_settings['file_settings']['max_size_mb'])
+        
+        # Ініціалізуємо налаштування шляхів користувача
+        if not config_manager_instance.get_setting('user_paths.results_excel_filename'):
+            config_manager_instance.set_setting('user_paths.results_excel_filename', default_settings['user_paths']['results_excel_filename'])
+        
+        if not config_manager_instance.get_setting('user_paths.results_excel_path'):
+            config_manager_instance.set_setting('user_paths.results_excel_path', get_downloads_folder())
+        
+        if not config_manager_instance.get_setting('user_paths.last_answer_key_file'):
+            config_manager_instance.set_setting('user_paths.last_answer_key_file', default_settings['user_paths']['last_answer_key_file'])
+        
+        if not config_manager_instance.get_setting('user_paths.save_results_path'):
+            config_manager_instance.set_setting('user_paths.save_results_path', get_downloads_folder())
         
         config_manager_instance.save_settings()
         st.session_state.config_manager = config_manager_instance
@@ -223,11 +242,173 @@ if 'last_error' not in st.session_state:
 if 'test_work_name' not in st.session_state:
     st.session_state.test_work_name = ""
 if 'results_excel_path' not in st.session_state:
-    # Встановлюємо папку Завантаження як значення за замовчуванням
-    downloads_folder = get_downloads_folder()
-    st.session_state.results_excel_path = downloads_folder
+    # Завантажуємо збережений шлях або встановлюємо папку Завантаження як значення за замовчуванням
+    saved_path = cm.get_setting('user_paths.results_excel_path')
+    st.session_state.results_excel_path = saved_path if saved_path else get_downloads_folder()
 if 'results_excel_filename' not in st.session_state:
-    st.session_state.results_excel_filename = "results.xlsx"
+    # Завантажуємо збережену назву файлу
+    saved_filename = cm.get_setting('user_paths.results_excel_filename')
+    st.session_state.results_excel_filename = saved_filename if saved_filename else "results.xlsx"
+if 'save_results_path' not in st.session_state:
+    # Завантажуємо збережений шлях для збереження результатів або використовуємо за замовчуванням
+    saved_save_path = cm.get_setting('user_paths.save_results_path')
+    st.session_state.save_results_path = saved_save_path if saved_save_path else get_downloads_folder()
+if 'save_tests_path' not in st.session_state:
+    # Завантажуємо збережений шлях для збереження згенерованих тестів або використовуємо за замовчуванням
+    saved_tests_path = cm.get_setting('user_paths.save_tests_path')
+    st.session_state.save_tests_path = saved_tests_path if saved_tests_path else get_downloads_folder()
+
+def save_user_settings():
+    """Збереження налаштувань користувача в конфігурацію"""
+    try:
+        cm.set_setting('user_paths.results_excel_path', st.session_state.results_excel_path)
+        cm.set_setting('user_paths.results_excel_filename', st.session_state.results_excel_filename)
+        cm.set_setting('user_paths.save_results_path', st.session_state.save_results_path)
+        cm.set_setting('user_paths.save_tests_path', st.session_state.save_tests_path)
+        if hasattr(st.session_state, 'answer_key_file') and st.session_state.answer_key_file:
+            cm.set_setting('user_paths.last_answer_key_file', st.session_state.answer_key_file)
+        cm.save_settings()
+        log.info("Налаштування користувача збережено")
+    except Exception as e:
+        log.error(f"Помилка при збереженні налаштувань: {e}")
+
+def create_custom_filename(work_name, student_class, student_full_name, variant, key_file_name, timestamp, extension):
+    """Створює кастомну назву файлу з назвою роботи"""
+    parts = []
+    
+    # Додаємо назву роботи
+    if work_name:
+        parts.append(work_name.replace(' ', '_').replace('/', '_').replace('\\', '_'))
+    
+    # Додаємо клас (якщо є)
+    if student_class:
+        parts.append(student_class.replace(' ', '_').replace('-', '_'))
+    
+    # Додаємо ім'я (якщо є)
+    if student_full_name:
+        parts.append(student_full_name.replace(' ', '_').replace('/', '_').replace('\\', '_'))
+    
+    # Додаємо варіант
+    parts.append(f"Варіант{variant}")
+    
+    # Додаємо timestamp
+    parts.append(timestamp)
+    
+    return f"{'_'.join(parts)}.{extension}"
+
+def save_all_results():
+    """Зберігає всі результати (PDF, Word, Excel) в указану папку"""
+    try:
+        if not hasattr(st.session_state, 'check_result') or not st.session_state.check_result:
+            st.error("❌ Немає результатів для збереження. Спочатку перевірте роботу.")
+            return False
+        
+        save_path = st.session_state.save_results_path
+        if not save_path or not os.path.exists(save_path):
+            st.error("❌ Вказаний шлях для збереження не існує.")
+            return False
+        
+        result = st.session_state.check_result
+        work_name = st.session_state.test_work_name
+        key_file_name = os.path.basename(st.session_state.answer_key_file) if st.session_state.answer_key_file else ""
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        
+        # Створюємо кастомні назви файлів
+        pdf_filename = create_custom_filename(
+            work_name, st.session_state.student_class, st.session_state.student_full_name,
+            result['variant_number'], key_file_name, timestamp, "pdf"
+        )
+        word_filename = create_custom_filename(
+            work_name, st.session_state.student_class, st.session_state.student_full_name,
+            result['variant_number'], key_file_name, timestamp, "docx"
+        )
+        
+        # Зберігаємо PDF з кастомною назвою
+        from core.processor import create_check_result_pdf
+        import tempfile
+        import shutil
+        
+        # Створюємо PDF у тимчасовій папці
+        temp_pdf_path = create_check_result_pdf(result, tempfile.gettempdir())
+        pdf_path = os.path.join(save_path, pdf_filename)
+        shutil.move(temp_pdf_path, pdf_path)
+        pdf_success = True
+        
+        # Зберігаємо Word з кастомною назвою
+        from core.processor import create_check_result_word
+        temp_word_path = create_check_result_word(result, tempfile.gettempdir())
+        word_path = os.path.join(save_path, word_filename)
+        shutil.move(temp_word_path, word_path)
+        word_success = True
+        
+        # Зберігаємо в Excel
+        excel_success = save_student_result_to_excel()
+        excel_path = os.path.join(st.session_state.results_excel_path, st.session_state.results_excel_filename)
+        
+        # Перевіряємо результати
+        success_count = sum([pdf_success, word_success, excel_success])
+        
+        if success_count == 3:
+            work_name = st.session_state.test_work_name if st.session_state.test_work_name else "Тест"
+            key_file_name = os.path.basename(st.session_state.answer_key_file) if st.session_state.answer_key_file else "Невідомий файл"
+            st.success(f"✅ {work_name} - Всі результати збережено успішно!\n📁 PDF: {pdf_path}\n📄 Word: {word_path}\n📊 Excel: {excel_path}\n🔑 Файл-ключ: {key_file_name}")
+            save_user_settings()
+            return True
+        elif success_count > 0:
+            st.warning(f"⚠️ Частково збережено ({success_count}/3 файлів)")
+            return True
+        else:
+            st.error("❌ Помилка при збереженні результатів")
+            return False
+            
+    except Exception as e:
+        st.error(f"❌ Помилка при збереженні всіх результатів: {str(e)}")
+        add_log_message(f"Помилка при збереженні всіх результатів: {str(e)}", "ERROR")
+        return False
+
+def save_all_tests():
+    """Збереження всіх згенерованих тестів в одну папку"""
+    try:
+        if not st.session_state.save_tests_path:
+            st.error("Не вказано шлях для збереження")
+            return
+        
+        # Створюємо папку якщо її немає
+        os.makedirs(st.session_state.save_tests_path, exist_ok=True)
+        
+        saved_files = []
+        
+        # Зберігаємо Word файл з тестами
+        if 'test_word' in st.session_state.output_files and os.path.exists(st.session_state.output_files['test_word']):
+            filename = os.path.basename(st.session_state.output_files['test_word'])
+            final_path = os.path.join(st.session_state.save_tests_path, filename)
+            shutil.copy2(st.session_state.output_files['test_word'], final_path)
+            saved_files.append(f"Тести: {filename}")
+        
+        # Зберігаємо Excel ключ
+        if 'excel_key' in st.session_state.output_files and os.path.exists(st.session_state.output_files['excel_key']):
+            filename = os.path.basename(st.session_state.output_files['excel_key'])
+            final_path = os.path.join(st.session_state.save_tests_path, filename)
+            shutil.copy2(st.session_state.output_files['excel_key'], final_path)
+            saved_files.append(f"Ключ: {filename}")
+        
+        # Зберігаємо Word файл з відповідями
+        if 'answers_word' in st.session_state.output_files and os.path.exists(st.session_state.output_files['answers_word']):
+            filename = os.path.basename(st.session_state.output_files['answers_word'])
+            final_path = os.path.join(st.session_state.save_tests_path, filename)
+            shutil.copy2(st.session_state.output_files['answers_word'], final_path)
+            saved_files.append(f"Відповіді: {filename}")
+        
+        if saved_files:
+            st.success(f"✅ Всі файли тестів збережено успішно в папку: {st.session_state.save_tests_path}\n\n" +
+                      "\n".join(saved_files))
+            save_user_settings()
+        else:
+            st.warning("⚠️ Немає файлів для збереження")
+            
+    except Exception as e:
+        st.error(f"❌ Помилка при збереженні файлів: {e}")
+        add_log_message(f"Помилка збереження всіх тестів: {e}", "ERROR")
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -436,19 +617,27 @@ def save_student_result_to_excel():
             'full_name': st.session_state.student_full_name
         }
         
+        # Отримуємо назву файлу-ключа
+        key_file_name = ""
+        if hasattr(st.session_state, 'answer_key_file') and st.session_state.answer_key_file:
+            key_file_name = os.path.basename(st.session_state.answer_key_file)
+        
         # Викликаємо функцію збереження з processor.py
         from core.processor import save_student_result_to_excel as save_result_func
         save_result_func(
             check_result=st.session_state.check_result,
             student_info=student_info,
             work_name=st.session_state.test_work_name,
-            excel_file_path=full_path
+            excel_file_path=full_path,
+            key_file_name=key_file_name
         )
         
         success = True
         
         if success:
             add_log_message(f"Результат збережено у файл {full_path}", "SUCCESS")
+            # Зберігаємо налаштування користувача
+            save_user_settings()
             return True
         else:
             st.session_state.last_error = "Помилка при збереженні результату"
@@ -666,6 +855,23 @@ def main():
             st.markdown("---")
             st.header("📥 Завантажити результати")
             
+            # Поле для вибору шляху збереження
+            st.subheader("📁 Налаштування збереження")
+            new_save_tests_path = st.text_input(
+                "Шлях для збереження файлів:",
+                value=st.session_state.save_tests_path,
+                help="Вкажіть папку для збереження згенерованих файлів. Натисніть Enter для збереження."
+            )
+            if new_save_tests_path != st.session_state.save_tests_path:
+                st.session_state.save_tests_path = new_save_tests_path
+                save_user_settings()
+            
+            # Кнопка "Завантажити все"
+            st.markdown("### 🎯 Швидке збереження")
+            if st.button("📦 Завантажити все", type="primary", use_container_width=True, help="Зберегти всі файли (тести, ключ, відповіді) в обрану папку"):
+                save_all_tests()
+            
+            st.markdown("### 📋 Окремі файли")
             col1, col2, col3 = st.columns(3)
             
             # Тесты для учеников (Word)
@@ -722,6 +928,8 @@ def main():
             with open(key_file_path, "wb") as f:
                 f.write(answer_key_file.getbuffer())
             st.session_state.answer_key_file = key_file_path
+            # Зберігаємо назву файлу-ключа в налаштуваннях
+            save_user_settings()
             st.success(f"✅ Файл-ключ завантажено: {answer_key_file.name}")
         
         # Ввод данных ученика
@@ -765,6 +973,14 @@ def main():
                     value=st.session_state.results_excel_filename,
                     placeholder="results.xlsx"
                 )
+            
+            # Окремий шлях для збереження всіх результатів
+            st.session_state.save_results_path = st.text_input(
+                "💾 Шлях для збереження всіх результатів (PDF, Word, Excel):",
+                value=st.session_state.save_results_path,
+                placeholder="Наприклад: C:\\Users\\Teacher\\Downloads",
+                help="Папка, куди будуть збережені всі файли результатів при натисканні кнопки 'Зберегти всі результати'"
+            )
             
             st.markdown("---")
             
@@ -831,11 +1047,21 @@ def main():
                 # PDF отчет
                 with col1:
                     if os.path.exists(st.session_state.check_reports['pdf_report']):
+                        # Створюємо кастомну назву для PDF
+                        work_name = st.session_state.test_work_name if st.session_state.test_work_name else "Тест"
+                        key_file_name = os.path.basename(st.session_state.answer_key_file) if st.session_state.answer_key_file else ""
+                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                        
+                        pdf_custom_name = create_custom_filename(
+                            work_name, st.session_state.student_class, st.session_state.student_full_name,
+                            st.session_state.check_result['variant_number'], key_file_name, timestamp, "pdf"
+                        )
+                        
                         with open(st.session_state.check_reports['pdf_report'], "rb") as file:
                             st.download_button(
                                 label="📄 Короткий звіт (PDF)",
                                 data=file,
-                                file_name=os.path.basename(st.session_state.check_reports['pdf_report']),
+                                file_name=pdf_custom_name,
                                 mime="application/pdf",
                                 use_container_width=True
                             )
@@ -843,11 +1069,21 @@ def main():
                 # Word отчет
                 with col2:
                     if os.path.exists(st.session_state.check_reports['word_report']):
+                        # Створюємо кастомну назву для Word
+                        work_name = st.session_state.test_work_name if st.session_state.test_work_name else "Тест"
+                        key_file_name = os.path.basename(st.session_state.answer_key_file) if st.session_state.answer_key_file else ""
+                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                        
+                        word_custom_name = create_custom_filename(
+                            work_name, st.session_state.student_class, st.session_state.student_full_name,
+                            st.session_state.check_result['variant_number'], key_file_name, timestamp, "docx"
+                        )
+                        
                         with open(st.session_state.check_reports['word_report'], "rb") as file:
                             st.download_button(
                                 label="📝 Розширений звіт (Word)",
                                 data=file,
-                                file_name=os.path.basename(st.session_state.check_reports['word_report']),
+                                file_name=word_custom_name,
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True
                             )
@@ -867,6 +1103,20 @@ def main():
                                 st.error("❌ Помилка при збереженні результату")
                         else:
                             st.error("❌ Вкажіть шлях до папки та назву файлу для збереження результатів")
+                
+                # Кнопка збереження всіх результатів
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("📦 Зберегти всі результати", type="primary", use_container_width=True, help="Зберегти PDF, Word звіти та зафіксувати результат у таблиці"):
+                        if st.session_state.save_results_path and st.session_state.results_excel_path and st.session_state.results_excel_filename:
+                            with st.spinner("Збереження всіх результатів..."):
+                                success = save_all_results()
+                            
+                            if success:
+                                st.balloons()
+                        else:
+                            st.error("❌ Вкажіть всі необхідні шляхи для збереження результатів")
     
     # Журнал событий
     with st.expander("📋 Журнал подій", expanded=False):

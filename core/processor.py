@@ -1811,7 +1811,7 @@ def generate_neural_query_document(output_dir: str) -> str:
 
 
 def save_student_result_to_excel(check_result: Dict[str, Any], student_info: Dict[str, str], 
-                                work_name: str, excel_file_path: str) -> None:
+                                work_name: str, excel_file_path: str, key_file_name: str = "") -> None:
     """
     Зберігає результат перевірки учня в Excel файл.
     
@@ -1820,6 +1820,7 @@ def save_student_result_to_excel(check_result: Dict[str, Any], student_info: Dic
         student_info: Інформація про учня (клас, ПІБ)
         work_name: Назва роботи
         excel_file_path: Шлях до Excel файлу
+        key_file_name: Назва файлу-ключа
     """
     try:
         # Підготовка даних для збереження
@@ -1842,6 +1843,7 @@ def save_student_result_to_excel(check_result: Dict[str, Any], student_info: Dic
         
         # Створюємо рядок даних з чистими числами
         row_data = {
+            'Файл-ключ': key_file_name,
             'Дата перевірки': check_date,
             'Назва роботи': work_name,
             'Клас': student_class,
@@ -1878,7 +1880,7 @@ def save_student_result_to_excel(check_result: Dict[str, Any], student_info: Dic
             all_columns = list(set(existing_df.columns.tolist() + new_row_df.columns.tolist()))
             
             # Переупорядковуємо колонки: основні спочатку, потім завдання
-            base_columns = ['Дата перевірки', 'Назва роботи', 'Клас', 'Учень', 'Варіант', 
+            base_columns = ['Файл-ключ', 'Дата перевірки', 'Назва роботи', 'Клас', 'Учень', 'Варіант', 
                           'Загальний відсоток (%)', 'Отримано балів', 'Максимум балів']
             task_columns = [col for col in all_columns if col.startswith('Завдання')]
             task_columns.sort(key=lambda x: (int(x.split()[1]) if x.split()[1].isdigit() else 0, x))
