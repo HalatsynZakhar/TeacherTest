@@ -11,6 +11,8 @@ from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 import tempfile
+from .template_generator import create_test_template, create_answer_key_template
+from .neural_query_generator import create_neural_query_document
 
 def format_number_with_comma(number: float, decimals: int = 1) -> str:
     """Форматирует число с запятой вместо точки как десятичный разделитель"""
@@ -97,10 +99,12 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
     Читает Excel файл с вопросами теста.
     
     Ожидаемая структура:
-    - Столбец 0: Текст вопроса
-    - Столбец 1: Номер правильного ответа (или пустой для нетестовых заданий)
-    - Столбец 2: Вес задания (по умолчанию 1)
-    - Столбцы 3+: Варианты ответов (опционально для нетестовых заданий)
+    - Строка 1: Инструкции (пропускается)
+    - Столбец 0: Номер вопроса
+    - Столбец 1: Текст вопроса
+    - Столбец 2: Номер правильного ответа (или пустой для нетестовых заданий)
+    - Столбец 3: Вес задания (по умолчанию 1)
+    - Столбцы 4+: Варианты ответов (опционально для нетестовых заданий)
     
     Args:
         file_path: Путь к Excel файлу
@@ -109,25 +113,27 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         DataFrame с вопросами теста
     """
     try:
-        # Читаем Excel файл
-        df = pd.read_excel(file_path, header=None)
+        # Читаем Excel файл, пропуская первую строку с инструкциями
+        df = pd.read_excel(file_path, header=None, skiprows=1)
         
-        # Конвертируем только столбец с вопросами в строки
+        # Конвертируем столбцы с номером вопроса и текстом вопроса в строки
         # Остальные столбцы оставляем как есть для сохранения исходного форматирования
-        df[df.columns[0]] = df[df.columns[0]].astype(str)
+        df[df.columns[0]] = df[df.columns[0]].astype(str)  # Номер вопроса
+        df[df.columns[1]] = df[df.columns[1]].astype(str)  # Текст вопроса
         
-        # Проверяем минимальную структуру (вопрос + правильный ответ + вес + минимум 2 варианта)
-        if df.shape[1] < 3:
-            raise ValueError("Файл должен содержать минимум 3 столбца: вопрос, правильный ответ/тип, вес задания")
+        # Проверяем минимальную структуру (номер + вопрос + правильный ответ + вес)
+        if df.shape[1] < 4:
+            raise ValueError("Файл должен содержать минимум 4 столбца: номер вопроса, вопрос, правильный ответ/тип, вес задания")
         
-        # Удаляем пустые строки (проверяем только наличие вопроса)
-        df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0] != 'nan')]  # Удаляем строки где нет вопроса
+        # Удаляем пустые строки (проверяем наличие номера вопроса и текста вопроса)
+        df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0] != 'nan') & 
+               df.iloc[:, 1].notna() & (df.iloc[:, 1] != 'nan')]  # Удаляем строки где нет номера или вопроса
         
         if df.empty:
             raise ValueError("Файл не содержит валидных данных")
         
         # Переименовываем столбцы для удобства
-        columns = ['question', 'correct_answer', 'weight'] + [f'option_{i}' for i in range(1, df.shape[1] - 2)]
+        columns = ['question_number', 'question', 'correct_answer', 'weight'] + [f'option_{i}' for i in range(1, df.shape[1] - 3)]
         df.columns = columns
         
         # Обрабатываем вес задания (по умолчанию 1)
@@ -198,6 +204,42 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         log.error(f"Ошибка при чтении файла {file_path}: {e}")
         raise
 
+def _process_optional_questions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Обрабатывает опциональные вопросы (когда номера повторяются).
+    Выбирает по одному случайному вопросу для каждого номера.
+    
+    Args:
+        df: DataFrame с вопросами
+        
+    Returns:
+        DataFrame с выбранными вопросами
+    """
+    # Группируем вопросы по номерам
+    question_groups = df.groupby('question_number')
+    
+    selected_questions = []
+    
+    for question_num, group in question_groups:
+        if len(group) > 1:
+            # Если есть несколько вопросов с одним номером, выбираем случайный
+            selected_question = group.sample(n=1)
+            log.info(f"Для номера вопроса {question_num} выбран случайный вариант из {len(group)} доступных")
+        else:
+            # Если вопрос один, просто берем его
+            selected_question = group
+        
+        selected_questions.append(selected_question)
+    
+    # Объединяем выбранные вопросы
+    result_df = pd.concat(selected_questions, ignore_index=True)
+    
+    # Сортируем по номеру вопроса для сохранения порядка
+    result_df = result_df.sort_values('question_number').reset_index(drop=True)
+    
+    log.info(f"Обработано {len(df)} вопросов, выбрано {len(result_df)} уникальных")
+    return result_df
+
 def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle_mode: str = 'full', answer_shuffle_mode: str = 'random') -> List[Dict[str, Any]]:
     """
     Генерирует варианты тестов с перемешанными вопросами и ответами.
@@ -211,6 +253,9 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
     Returns:
         Список словарей с вариантами тестов
     """
+    # Обрабатываем опциональные вопросы (когда номера повторяются)
+    processed_df = _process_optional_questions(df)
+    
     variants = []
     
     for variant_num in range(1, num_variants + 1):
@@ -223,13 +268,13 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
         # Упорядочиваем вопросы в зависимости от выбранного режима
         if question_shuffle_mode == 'full':
             # Полное перемешивание
-            shuffled_df = df.sample(frac=1).reset_index(drop=True)
+            shuffled_df = processed_df.sample(frac=1).reset_index(drop=True)
         elif question_shuffle_mode == 'easy_to_hard':
             # Сортировка от легкого к сложному (по весу)
-            shuffled_df = df.sort_values('weight').reset_index(drop=True)
+            shuffled_df = processed_df.sort_values('weight').reset_index(drop=True)
         else:  # question_shuffle_mode == 'none'
             # Не перемешиваем, оставляем исходный порядок
-            shuffled_df = df.reset_index(drop=True)
+            shuffled_df = processed_df.reset_index(drop=True)
         
         for idx, row in shuffled_df.iterrows():
             question_data = {
@@ -1316,4 +1361,62 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         
     except Exception as e:
         log.error(f"Ошибка при экспорте ответов в Word: {e}")
+        raise
+
+def generate_excel_templates(output_dir: str) -> Tuple[str, str]:
+    """
+    Генерирует Excel шаблоны для тестов и ключей ответов.
+    
+    Args:
+        output_dir: Директория для сохранения шаблонов
+        
+    Returns:
+        Tuple с путями к созданным шаблонам (тест, ключ)
+    """
+    try:
+        # Создаем директорию если не существует
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Пути к шаблонам
+        test_template_path = os.path.join(output_dir, "Шаблон_теста.xlsx")
+        answer_key_template_path = os.path.join(output_dir, "Шаблон_ключа_ответов.xlsx")
+        
+        # Создаем шаблоны
+        create_test_template(test_template_path)
+        create_answer_key_template(answer_key_template_path)
+        
+        log.info(f"Созданы шаблоны: {test_template_path}, {answer_key_template_path}")
+        
+        return test_template_path, answer_key_template_path
+        
+    except Exception as e:
+        log.error(f"Ошибка при создании шаблонов: {e}")
+        raise
+
+def generate_neural_query_document(output_dir: str) -> str:
+    """
+    Генерирует документ Word с запросом для нейросети.
+    
+    Args:
+        output_dir: Директория для сохранения документа
+        
+    Returns:
+        str: Путь к созданному документу
+    """
+    try:
+        # Создаем директорию если не существует
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Путь для документа
+        query_doc_path = os.path.join(output_dir, "Запрос_для_нейросети.docx")
+        
+        # Создаем документ
+        create_neural_query_document(query_doc_path)
+        
+        log.info(f"Документ с запросом для нейросети создан: {query_doc_path}")
+        
+        return query_doc_path
+        
+    except Exception as e:
+        log.error(f"Ошибка при создании документа с запросом: {e}")
         raise

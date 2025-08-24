@@ -32,7 +32,9 @@ from core.processor import (
     create_check_result_word,
     create_test_word,
     read_test_word,
-    export_answers_to_word
+    export_answers_to_word,
+    generate_excel_templates,
+    generate_neural_query_document
 )
 
 # Настройка логирования
@@ -392,6 +394,68 @@ def check_answers():
 # Основной интерфейс
 def main():
     st.title("📝 TeacherTest - Генератор тестів для учнів")
+    
+    # Секция скачивания шаблонов
+    st.subheader("📋 Шаблони для роботи")
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    
+    with col1:
+        if st.button("📥 Завантажити шаблон тесту", help="Завантажити Excel шаблон для створення тестів"):
+            try:
+                temp_dir = ensure_temp_dir("templates_")
+                test_template_path, _ = generate_excel_templates(temp_dir)
+                
+                with open(test_template_path, 'rb') as file:
+                    st.download_button(
+                        label="💾 Зберегти шаблон тесту",
+                        data=file.read(),
+                        file_name="Шаблон_теста.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                add_log_message("Шаблон тесту згенеровано успішно")
+            except Exception as e:
+                st.error(f"Помилка при створенні шаблону тесту: {e}")
+                add_log_message(f"Помилка створення шаблону тесту: {e}", "ERROR")
+    
+    with col2:
+        if st.button("📥 Завантажити шаблон ключа", help="Завантажити Excel шаблон для ключів відповідей"):
+            try:
+                temp_dir = ensure_temp_dir("templates_")
+                _, answer_key_template_path = generate_excel_templates(temp_dir)
+                
+                with open(answer_key_template_path, 'rb') as file:
+                    st.download_button(
+                        label="💾 Зберегти шаблон ключа",
+                        data=file.read(),
+                        file_name="Шаблон_ключа_ответов.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                add_log_message("Шаблон ключа відповідей згенеровано успішно")
+            except Exception as e:
+                st.error(f"Помилка при створенні шаблону ключа: {e}")
+                add_log_message(f"Помилка створення шаблону ключа: {e}", "ERROR")
+    
+    with col3:
+        if st.button("🤖 Запит для нейромережі", help="Завантажити документ з запитом для генерації тестів через ШІ"):
+            try:
+                temp_dir = ensure_temp_dir("templates_")
+                query_doc_path = generate_neural_query_document(temp_dir)
+                
+                with open(query_doc_path, 'rb') as file:
+                    st.download_button(
+                        label="💾 Зберегти запит для ШІ",
+                        data=file.read(),
+                        file_name="Запрос_для_нейросети.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                add_log_message("Документ з запитом для нейромережі згенеровано успішно")
+            except Exception as e:
+                st.error(f"Помилка при створенні документа: {e}")
+                add_log_message(f"Помилка створення документа: {e}", "ERROR")
+    
+    with col4:
+        st.info("💡 **Підказка:** Завантажте шаблони для правильного форматування ваших тестів та ключів відповідей. Шаблони містять детальні інструкції по заповненню.")
+    
     st.markdown("---")
     
     # Боковая панель с настройками
