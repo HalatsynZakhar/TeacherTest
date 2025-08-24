@@ -780,7 +780,7 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
         doc = Document()
         
         for variant in variants:
-            # Заголовок варианта
+            # Заголовок варианта - общий по центру перед колонками
             heading = doc.add_heading(f"Тест - Варіант {variant['variant_number']}", level=1)
             heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
@@ -839,21 +839,46 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 cols_reset_xml = '<w:cols xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:num="1"/>'
                 new_section._sectPr.append(parse_xml(cols_reset_xml))
             
-            # Таблица для ответов
+            # Таблица для ответов - сразу после теста, без разрыва страницы
+            # Всегда по 15 элементов в строке, последняя строка дополняется пустыми ячейками
             doc.add_paragraph("Таблиця відповідей:")
-            table = doc.add_table(rows=1, cols=len(variant['questions']))
-            table.style = 'Table Grid'
             
-            # Заголовки таблицы
-            header_cells = table.rows[0].cells
-            for i in range(len(variant['questions'])):
-                header_cells[i].text = str(i + 1)
-                header_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            total_questions = len(variant['questions'])
+            questions_per_row = 15  # Всегда 15 элементов в строке
+            num_rows = (total_questions + questions_per_row - 1) // questions_per_row  # Округление вверх
             
-            # Пустая строка для ответов
-            row_cells = table.add_row().cells
-            for cell in row_cells:
-                cell.text = ""
+            current_q = 0
+            for row_idx in range(num_rows):
+                # Всегда создаем строку с 15 колонками
+                cols_in_row = questions_per_row
+                
+                # Создаем таблицу для текущей строки
+                table = doc.add_table(rows=2, cols=cols_in_row)
+                table.style = 'Table Grid'
+                
+                # Растягиваем таблицу по всей странице
+                table.autofit = False
+                for col in table.columns:
+                    col.width = Inches(6.5 / cols_in_row)
+                
+                # Заголовки (номера вопросов)
+                header_cells = table.rows[0].cells
+                for i in range(cols_in_row):
+                    if current_q < total_questions:
+                        header_cells[i].text = str(current_q + 1)
+                        current_q += 1
+                    else:
+                        header_cells[i].text = ""  # Пустая ячейка для выравнивания ширины
+                    header_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Пустая строка для ответов
+                answer_cells = table.rows[1].cells
+                for cell in answer_cells:
+                    cell.text = ""
+                
+                # Добавляем небольшой отступ между строками таблиц
+                if row_idx < num_rows - 1:
+                    doc.add_paragraph()
             
             # Разрыв страницы между вариантами (кроме последнего)
             if variant != variants[-1]:
