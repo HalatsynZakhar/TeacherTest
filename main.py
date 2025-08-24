@@ -156,7 +156,13 @@ class TeacherTestApp:
         
         # Відповіді учня
         ttk.Label(self.mode2_frame, text="Відповіді учня (через кому):").grid(row=2, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(self.mode2_frame, textvariable=self.student_answers_text, width=50).grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
+        answers_entry = ttk.Entry(self.mode2_frame, textvariable=self.student_answers_text, width=50)
+        answers_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(5, 5), pady=2)
+        
+        # Додаємо підказку
+        help_label = ttk.Label(self.mode2_frame, text="💡 Для тестових: номери від 1 до кількості варіантів. Для відкритих: текстові відповіді", 
+                              font=('TkDefaultFont', 8), foreground='gray')
+        help_label.grid(row=2, column=2, sticky=tk.W, padx=(5, 0), pady=2)
         
         # Кнопка перевірки
         ttk.Button(self.mode2_frame, text="Перевірити роботу", command=self.check_answers).grid(row=3, column=0, columnspan=3, pady=10)

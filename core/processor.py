@@ -701,10 +701,18 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                 try:
                     student_ans_int = int(student_ans)
                     correct_ans_int = int(correct_ans)
-                    is_correct = student_ans_int == correct_ans_int
+                    
+                    # Перевіряємо, що відповідь учня знаходиться в допустимому діапазоні
+                    num_options = len(question_options)
+                    if student_ans_int < 1 or student_ans_int > num_options:
+                        is_correct = False
+                        # Додаємо інформацію про помилку в результат
+                        student_ans_int = f"{student_ans} (недопустиме значення, має бути від 1 до {num_options})"
+                    else:
+                        is_correct = student_ans_int == correct_ans_int
                 except (ValueError, TypeError):
                     is_correct = False
-                    student_ans_int = student_ans
+                    student_ans_int = f"{student_ans} (не є числом)"
             else:
                 # Відкрите завдання - порівнюємо рядки з нормалізацією
                 student_str = str(student_ans).strip().lower()
