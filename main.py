@@ -338,9 +338,9 @@ class TeacherTestApp:
             # Парсинг ответов ученика
             answers_text = self.student_answers_text.get().strip()
             try:
-                student_answers = [int(x.strip()) for x in answers_text.split(',')]
+                student_answers = [x.strip() for x in answers_text.split(',') if x.strip()]
             except ValueError:
-                raise ValueError("Ответы должны быть числами, разделенными запятыми")
+                raise ValueError("Ответы должны быть разделенными запятыми")
             
             self.log_message(f"Ответы ученика: {student_answers}")
             

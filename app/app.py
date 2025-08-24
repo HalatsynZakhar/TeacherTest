@@ -207,6 +207,10 @@ if 'student_full_name' not in st.session_state:
     st.session_state.student_full_name = ""
 if 'input_file_name' not in st.session_state:
     st.session_state.input_file_name = ""
+if 'test_class' not in st.session_state:
+    st.session_state.test_class = ""
+if 'test_date' not in st.session_state:
+    st.session_state.test_date = ""
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -300,7 +304,7 @@ def generate_tests():
         add_log_message(f"Создан Excel файл-ключ")
         
         # Создаем Word файл с тестами
-        test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format, st.session_state.space_optimization)
+        test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format, st.session_state.space_optimization, st.session_state.test_class, st.session_state.test_date)
         add_log_message(f"Создан Word файл с тестами")
         
         # Создаем Word файл с ответами
@@ -333,9 +337,9 @@ def check_answers():
         
         # Парсим ответы ученика
         try:
-            student_answers = [int(x.strip()) for x in st.session_state.student_answers.split(',') if x.strip()]
+            student_answers = [x.strip() for x in st.session_state.student_answers.split(',') if x.strip()]
         except ValueError:
-            raise ValueError("Ответы должны быть числами, разделенными запятыми")
+            raise ValueError("Ответы должны быть разделенными запятыми")
         
         # Проверяем ответы
         check_result = check_student_answers(
@@ -416,6 +420,20 @@ def main():
                 "Оптимізація місця",
                 value=st.session_state.space_optimization,
                 help="Мінімізує кількість переводів рядків для економії місця (може погіршити читабельність)"
+            )
+            
+            # Дополнительные поля для заголовка теста
+            st.subheader("Додаткова інформація")
+            st.session_state.test_class = st.text_input(
+                "Клас (опціонально):",
+                value=st.session_state.test_class,
+                help="Вкажіть клас для відображення в заголовку тесту"
+            )
+            
+            st.session_state.test_date = st.text_input(
+                "Дата тесту (опціонально):",
+                value=st.session_state.test_date,
+                help="Вкажіть дату тесту для відображення в заголовку"
             )
         else:
             st.subheader("Налаштування перевірки")

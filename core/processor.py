@@ -93,8 +93,9 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
     
     Ожидаемая структура:
     - Столбец 0: Текст вопроса
-    - Столбец 1: Номер правильного ответа
-    - Столбцы 2+: Варианты ответов
+    - Столбец 1: Номер правильного ответа (или пустой для нетестовых заданий)
+    - Столбец 2: Вес задания (по умолчанию 1)
+    - Столбцы 3+: Варианты ответов (опционально для нетестовых заданий)
     
     Args:
         file_path: Путь к Excel файлу
@@ -106,29 +107,46 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Читаем Excel файл
         df = pd.read_excel(file_path, header=None)
         
-        # Конвертируем все значения в строки для предотвращения ошибок с числовыми ячейками
-        df = df.astype(str)
+        # Конвертируем только текстовые столбцы в строки, оставляя числовые как есть
+        # Столбец 0 (вопросы) и столбцы с вариантами ответов - в строки
+        for col in [0] + list(range(3, df.shape[1])):
+            if col < df.shape[1]:
+                df[df.columns[col]] = df[df.columns[col]].astype(str)
         
-        # Проверяем минимальную структуру (вопрос + правильный ответ + минимум 2 варианта)
-        if df.shape[1] < 4:
-            raise ValueError("Файл должен содержать минимум 4 столбца: вопрос, правильный ответ, и минимум 2 варианта ответов")
+        # Столбцы 1 (правильный ответ) и 2 (вес) оставляем как есть для корректной обработки
         
-        # Удаляем пустые строки (после конвертации в строки проверяем на 'nan')
-        df = df[(df.iloc[:, 0] != 'nan') & (df.iloc[:, 1] != 'nan')]  # Удаляем строки где нет вопроса или правильного ответа
+        # Проверяем минимальную структуру (вопрос + правильный ответ + вес + минимум 2 варианта)
+        if df.shape[1] < 3:
+            raise ValueError("Файл должен содержать минимум 3 столбца: вопрос, правильный ответ/тип, вес задания")
+        
+        # Удаляем пустые строки (проверяем только наличие вопроса)
+        df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0] != 'nan')]  # Удаляем строки где нет вопроса
         
         if df.empty:
             raise ValueError("Файл не содержит валидных данных")
         
         # Переименовываем столбцы для удобства
-        columns = ['question', 'correct_answer'] + [f'option_{i}' for i in range(1, df.shape[1] - 1)]
+        columns = ['question', 'correct_answer', 'weight'] + [f'option_{i}' for i in range(1, df.shape[1] - 2)]
         df.columns = columns
         
-        # Проверяем, что правильные ответы - числа
-        try:
-            df['correct_answer'] = pd.to_numeric(df['correct_answer'], errors='coerce')
-            df = df.dropna(subset=['correct_answer'])
-        except:
-            raise ValueError("Столбец с правильными ответами должен содержать числа")
+        # Обрабатываем вес задания (по умолчанию 1)
+        df['weight'] = pd.to_numeric(df['weight'], errors='coerce')
+        df['weight'] = df['weight'].fillna(1.0)  # Заполняем пустые значения единицей
+        
+        # Определяем тип задания: тестовое или нетестовое
+        df['is_test_question'] = df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        
+        # Для тестовых заданий проверяем правильные ответы
+        test_mask = df['is_test_question']
+        if test_mask.any():
+            df.loc[test_mask, 'correct_answer'] = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
+            # Удаляем тестовые вопросы с некорректными ответами
+            df = df[~(test_mask & df['correct_answer'].isna())]
+        
+        # Для нетестовых заданий сохраняем правильный ответ как текст
+        non_test_mask = ~df['is_test_question']
+        if non_test_mask.any():
+            df.loc[non_test_mask, 'correct_answer'] = df.loc[non_test_mask, 'correct_answer'].astype(str)
         
         log.info(f"Загружено {len(df)} вопросов из файла {file_path}")
         return df
@@ -161,33 +179,49 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
         shuffled_df = df.sample(frac=1, random_state=variant_num).reset_index(drop=True)
         
         for idx, row in shuffled_df.iterrows():
-            # Собираем все варианты ответов
-            options = []
-            for col in df.columns:
-                if col.startswith('option_') and pd.notna(row[col]):
-                    options.append(str(row[col]))
-            
-            if len(options) < 2:
-                log.warning(f"Вопрос '{row['question']}' имеет менее 2 вариантов ответов, пропускаем")
-                continue
-            
-            # Перемешиваем варианты ответов
-            random.seed(variant_num + idx)  # Для воспроизводимости
-            shuffled_options = options.copy()
-            random.shuffle(shuffled_options)
-            
-            # Находим новую позицию правильного ответа
-            correct_option_text = options[int(row['correct_answer']) - 1]  # -1 так как нумерация с 1
-            new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерации с 1
-            
             question_data = {
                 'question_text': str(row['question']),
-                'options': shuffled_options,
-                'correct_answer': new_correct_position
+                'weight': float(row['weight']),
+                'is_test_question': bool(row['is_test_question'])
             }
             
+            if row['is_test_question']:
+                # Тестовое задание с вариантами ответов
+                options = []
+                for col in df.columns:
+                    if col.startswith('option_') and pd.notna(row[col]):
+                        options.append(str(row[col]))
+                
+                if len(options) < 2:
+                    log.warning(f"Тестовый вопрос '{row['question']}' имеет менее 2 вариантов ответов, пропускаем")
+                    continue
+                
+                # Перемешиваем варианты ответов
+                random.seed(variant_num + idx)  # Для воспроизводимости
+                shuffled_options = options.copy()
+                random.shuffle(shuffled_options)
+                
+                # Находим новую позицию правильного ответа
+                correct_option_text = options[int(row['correct_answer']) - 1]  # -1 так как нумерация с 1
+                new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерации с 1
+                
+                question_data.update({
+                    'options': shuffled_options,
+                    'correct_answer': new_correct_position
+                })
+            else:
+                # Нетестовое задание
+                question_data.update({
+                    'correct_answer': str(row['correct_answer'])
+                })
+            
             variant['questions'].append(question_data)
-            variant['answer_key'].append(new_correct_position)
+            
+            # Добавляем в ключ ответов
+            if row['is_test_question']:
+                variant['answer_key'].append(new_correct_position)
+            else:
+                variant['answer_key'].append(str(row['correct_answer']))
         
         variants.append(variant)
         log.info(f"Сгенерирован вариант {variant_num} с {len(variant['questions'])} вопросами")
@@ -402,9 +436,12 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
     for variant in variants:
         # Создаем строку с ответами через запятую
         answers_str = ",".join(map(str, variant['answer_key']))
+        # Создаем строку с весами через запятую
+        weights_str = ",".join(str(q['weight']) for q in variant['questions'])
         data.append({
             'Вариант': variant['variant_number'],
-            'Ответы': answers_str
+            'Ответы': answers_str,
+            'Веса': weights_str
         })
     
     # Создаем DataFrame и сохраняем в Excel
@@ -414,63 +451,104 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
     log.info(f"Создан Excel файл-ключ: {excel_path}")
     return excel_path
 
-def check_student_answers(answer_key_file: str, variant_number: int, student_answers: List[int]) -> Dict[str, Any]:
+def check_student_answers(answer_key_file: str, variant_number: int, student_answers: List) -> Dict[str, Any]:
     """
     Проверяет ответы ученика по файлу-ключу.
     
     Args:
         answer_key_file: Путь к Excel файлу-ключу
         variant_number: Номер варианта ученика
-        student_answers: Список ответов ученика
+        student_answers: Список ответов ученика (может содержать числа и строки)
         
     Returns:
         Словарь с результатами проверки
     """
     try:
-        # Читаем файл-ключ
-        df = pd.read_excel(answer_key_file)
+        # Читаем файл-ключ с ответами
+        key_df = pd.read_excel(answer_key_file)
         
         # Находим строку с нужным вариантом
-        variant_row = df[df['Вариант'] == variant_number]
+        variant_row = key_df[key_df['Вариант'] == variant_number]
         if variant_row.empty:
             raise ValueError(f"Вариант {variant_number} не найден в файле-ключе")
         
-        # Получаем правильные ответы
-        correct_answers_str = variant_row['Ответы'].iloc[0]
-        correct_answers = [int(x.strip()) for x in correct_answers_str.split(',')]
+        # Извлекаем ответы и веса
+        answers_str = variant_row['Ответы'].iloc[0]
+        weights_str = variant_row['Веса'].iloc[0]
+        
+        # Парсим ответы и веса
+        answer_key = []
+        weights = []
+        
+        for ans in str(answers_str).split(','):
+            ans = ans.strip()
+            try:
+                answer_key.append(int(ans))
+            except ValueError:
+                answer_key.append(ans)
+        
+        for weight in str(weights_str).split(','):
+            weights.append(float(weight.strip()))
         
         # Проверяем количество ответов
-        if len(student_answers) != len(correct_answers):
-            raise ValueError(f"Количество ответов ученика ({len(student_answers)}) не совпадает с количеством вопросов ({len(correct_answers)})")
+        if len(student_answers) != len(answer_key):
+            raise ValueError(f"Количество ответов ученика ({len(student_answers)}) не совпадает с количеством вопросов ({len(answer_key)})")
         
-        # Подсчитываем правильные ответы
-        correct_count = 0
+        # Подсчитываем правильные ответы с учетом весов
+        total_weight = sum(weights)
+        total_points = 12  # Общее количество баллов за тест
+        correct_weighted_score = 0
         detailed_results = []
         
-        for i, (student_ans, correct_ans) in enumerate(zip(student_answers, correct_answers)):
-            is_correct = student_ans == correct_ans
+        for i, (student_ans, correct_ans, weight) in enumerate(zip(student_answers, answer_key, weights)):
+            question_points = (weight / total_weight) * total_points
+            
+            # Проверяем правильность ответа
+            # Определяем тип вопроса по типу правильного ответа
+            is_test_question = isinstance(correct_ans, int)
+            
+            if is_test_question:
+                # Тестовое задание - сравниваем числа
+                try:
+                    student_ans_int = int(student_ans)
+                    is_correct = student_ans_int == correct_ans
+                except (ValueError, TypeError):
+                    is_correct = False
+                    student_ans_int = student_ans
+            else:
+                # Нетестовое задание - сравниваем строки
+                is_correct = str(student_ans).strip() == str(correct_ans).strip()
+                student_ans_int = student_ans
+            
             if is_correct:
-                correct_count += 1
+                correct_weighted_score += question_points
             
             detailed_results.append({
                 'question_number': i + 1,
-                'student_answer': student_ans,
+                'student_answer': student_ans_int,
                 'correct_answer': correct_ans,
-                'is_correct': is_correct
+                'is_correct': is_correct,
+                'weight': weight,
+                'points': question_points if is_correct else 0,
+                'max_points': question_points,
+                'is_test_question': is_test_question
             })
         
         # Вычисляем процент
-        score_percentage = (correct_count / len(correct_answers)) * 100
+        score_percentage = (correct_weighted_score / total_points) * 100
+        correct_count = sum(1 for r in detailed_results if r['is_correct'])
         
         result = {
             'variant_number': variant_number,
-            'total_questions': len(correct_answers),
+            'total_questions': len(answer_key),
             'correct_answers': correct_count,
             'score_percentage': score_percentage,
+            'weighted_score': correct_weighted_score,
+            'max_score': total_points,
             'detailed_results': detailed_results
         }
         
-        log.info(f"Проверка завершена для варианта {variant_number}: {correct_count}/{len(correct_answers)} ({score_percentage:.1f}%)")
+        log.info(f"Проверка завершена для варианта {variant_number}: {correct_count}/{len(answer_key)} ({score_percentage:.1f}%, {correct_weighted_score:.2f}/{total_points} баллов)")
         return result
         
     except Exception as e:
@@ -533,14 +611,15 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     # Основная информация
     pdf.set_font('Arial', 'B', 12)
-    # Расчет баллов в 12-балльной системе
-    twelve_point_score = (check_result['score_percentage'] / 100) * 12
+    # Используем взвешенные баллы
+    weighted_score = check_result.get('weighted_score', 0)
+    max_score = check_result.get('max_score', 12)
     info_texts = [
         f"Варіант: {check_result['variant_number']}",
         f"Всього питань: {check_result['total_questions']}",
         f"Правильних відповідей: {check_result['correct_answers']}",
         f"Відсоток: {check_result['score_percentage']:.1f}%",
-        f"Бали (12-бальна система): {twelve_point_score:.2f}"
+        f"Бали: {weighted_score:.2f} з {max_score}"
     ]
     
     for info_text in info_texts:
@@ -563,14 +642,15 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     # Строки таблицы
     pdf.set_font('Arial', '', 10)
-    points_per_question = 12 / check_result['total_questions']
     for result in check_result['detailed_results']:
         pdf.cell(20, 8, str(result['question_number']), 1, 0, 'C')
         pdf.cell(30, 8, str(result['student_answer']), 1, 0, 'C')
         pdf.cell(45, 8, str(result['correct_answer']), 1, 0, 'C')
-        # Баллы за задание (пропорционально 12-балльной системе)
-        points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
-        pdf.cell(30, 8, points, 1, 0, 'C')
+        # Баллы за задание с учетом весов
+        earned_points = result.get('points', 0)
+        max_points = result.get('max_points', 0)
+        points_text = f"{earned_points:.2f}/{max_points:.2f}"
+        pdf.cell(30, 8, points_text, 1, 0, 'C')
         # Используем текст вместо символов, которые не поддерживаются шрифтом Arial
         result_text = "Правильно" if result['is_correct'] else "Неправильно"
         pdf.cell(35, 8, result_text, 1, 0, 'C')
@@ -656,14 +736,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         info_para = doc.add_paragraph()
         info_para.add_run('Основна інформація:').bold = True
         
-        # Расчет баллов в 12-балльной системе
-        twelve_point_score = (check_result['score_percentage'] / 100) * 12
+        # Используем взвешенные баллы
+        weighted_score = check_result.get('weighted_score', 0)
+        max_score = check_result.get('max_score', 12)
         info_texts = [
             f"Варіант: {check_result['variant_number']}",
             f"Всього питань: {check_result['total_questions']}",
             f"Правильних відповідей: {check_result['correct_answers']}",
             f"Відсоток: {check_result['score_percentage']:.1f}%",
-            f"Бали (12-бальна система): {twelve_point_score:.2f}"
+            f"Бали: {weighted_score:.2f} з {max_score}"
         ]
         
         for info_text in info_texts:
@@ -701,14 +782,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     run.bold = True
         
         # Добавляем строки с результатами
-        points_per_question = 12 / check_result['total_questions']
         for result in check_result['detailed_results']:
             row_cells = table.add_row().cells
             row_cells[0].text = str(result['question_number'])
             row_cells[1].text = str(result['student_answer'])
             row_cells[2].text = str(result['correct_answer'])
-            # Баллы за задание
-            points = f"{points_per_question:.2f}" if result['is_correct'] else "0.00"
+            # Баллы за задание с учетом веса
+            earned_points = result.get('earned_points', 0)
+            max_points = result.get('max_points', 0)
+            points = f"{earned_points:.2f} / {max_points:.2f}"
             row_cells[3].text = points
             
             # Результат с цветными символами
@@ -824,7 +906,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             raise
 
 
-def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list", space_optimization: bool = False) -> str:
+def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list", space_optimization: bool = False, test_class: str = "", test_date: str = "") -> str:
     """Создать Word документ с тестами для всех вариантов
     
     Args:
@@ -834,6 +916,8 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
         input_file_name: Имя входного файла
         answer_format: Формат вариантов ответов ('list' или 'table')
         space_optimization: Минимизировать переводы строк для экономии места
+        test_class: Класс для отображения в заголовке (опционально)
+        test_date: Дата теста для отображения в заголовке (опционально)
     """
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -854,7 +938,14 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
         
         for variant in variants:
             # Заголовок варианта - общий по центру перед колонками
-            heading = doc.add_heading(f"Тест - Варіант {variant['variant_number']}", level=1)
+            title_parts = ["Тест"]
+            if test_class:
+                title_parts.append(f"Клас: {test_class}")
+            if test_date:
+                title_parts.append(f"Дата: {test_date}")
+            title_parts.append(f"Варіант {variant['variant_number']}")
+            
+            heading = doc.add_heading(" - ".join(title_parts), level=1)
             heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             # Инструкция
@@ -864,37 +955,59 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             if not space_optimization:
                 doc.add_paragraph()  # Пустая строка
             
+            # Вычисляем общий вес всех заданий для нормализации баллов
+            total_weight = sum(q['weight'] for q in variant['questions'])
+            total_points = 12  # Общее количество баллов за тест
+            
             # Вопросы в одноколоночной компоновке
             for i, question in enumerate(variant['questions'], 1):
-                # Текст вопроса
-                question_para = doc.add_paragraph(f"{i}. {question['question_text']}")
-                question_para.runs[0].bold = True
-                
-                # Варианты ответов в зависимости от формата
-                if answer_format == 'table':
-                    # Табличный формат - варианты ответов в таблице по ширине страницы
-                    options = question['options']
-                    num_options = len(options)
-                    
-                    # Создаем таблицу с одной строкой и количеством колонок равным количеству вариантов
-                    table = doc.add_table(rows=1, cols=num_options)
-                    table.style = 'Table Grid'
-                    
-                    # Растягиваем таблицу по всей ширине страницы
-                    table.autofit = False
-                    for col_idx, col in enumerate(table.columns):
-                        col.width = Inches(6.5 / num_options)  # Равномерно распределяем по ширине
-                    
-                    # Заполняем ячейки вариантами ответов
-                    cells = table.rows[0].cells
-                    for j, option in enumerate(options):
-                        cells[j].text = f"{j + 1}) {option}"
-                        cells[j].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # Вычисляем баллы за это задание
+                question_points = (question['weight'] / total_weight) * total_points
+                # Форматируем баллы красиво
+                if question_points == int(question_points):
+                    points_str = f"({int(question_points)} балів)"
                 else:
-                    # Списочный формат - обычные варианты ответов
-                    for j, option in enumerate(question['options'], 1):
-                        option_para = doc.add_paragraph(f"   {j}) {option}")
-                        option_para.style = 'Normal'
+                    points_str = f"({question_points:.1f} балів)"
+                
+                # Номер задания и баллы отдельно от текста вопроса
+                question_header = doc.add_paragraph(f"{i}. {points_str}")
+                question_header.runs[0].bold = True
+                
+                # Текст вопроса отдельной строкой
+                question_para = doc.add_paragraph(question['question_text'])
+                question_para.style = 'Normal'
+                
+                # Варианты ответов в зависимости от типа задания
+                if question['is_test_question']:
+                    # Тестовое задание с вариантами ответов
+                    if answer_format == 'table':
+                        # Табличный формат - варианты ответов в таблице по ширине страницы
+                        options = question['options']
+                        num_options = len(options)
+                        
+                        # Создаем таблицу с одной строкой и количеством колонок равным количеству вариантов
+                        table = doc.add_table(rows=1, cols=num_options)
+                        table.style = 'Table Grid'
+                        
+                        # Растягиваем таблицу по всей ширине страницы
+                        table.autofit = False
+                        for col_idx, col in enumerate(table.columns):
+                            col.width = Inches(6.5 / num_options)  # Равномерно распределяем по ширине
+                        
+                        # Заполняем ячейки вариантами ответов
+                        cells = table.rows[0].cells
+                        for j, option in enumerate(options):
+                            cells[j].text = f"{j + 1}) {option}"
+                            cells[j].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    else:
+                        # Списочный формат - обычные варианты ответов
+                        for j, option in enumerate(question['options'], 1):
+                            option_para = doc.add_paragraph(f"   {j}) {option}")
+                            option_para.style = 'Normal'
+                else:
+                    # Нетестовое задание - место для ответа
+                    answer_para = doc.add_paragraph("Відповідь: ___________________________")
+                    answer_para.style = 'Normal'
                 
                 if not space_optimization:
                     doc.add_paragraph()  # Пустая строка между вопросами
