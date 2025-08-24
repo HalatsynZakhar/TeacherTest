@@ -490,17 +490,10 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     
-    # Нормализуем путь и проверяем доступность
+    # Нормализуем путь и создаем папку
     try:
         output_dir = os.path.normpath(output_dir)
-        # Если это сетевой путь и он недоступен, используем временную папку
-        if output_dir.startswith('\\') and not os.path.exists(output_dir):
-            output_dir = ensure_temp_dir("reports_")
-            log.warning(f"Сетевой путь недоступен, используем временную папку: {output_dir}")
-        
-        # Создаем папку если она не существует
         os.makedirs(output_dir, exist_ok=True)
-        
     except Exception as e:
         log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем временную папку.")
         output_dir = ensure_temp_dir("reports_")
@@ -617,13 +610,8 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         Путь к созданному Word файлу
     """
     try:
-        # Нормализуем путь и проверяем доступность
+        # Нормализуем путь и создаем папку
         output_dir = os.path.normpath(output_dir)
-        # Если это сетевой путь и он недоступен, используем временную папку
-        if output_dir.startswith('\\\\') and not os.path.exists(output_dir):
-            output_dir = ensure_temp_dir("reports_")
-            log.warning(f"Сетевой путь недоступен, используем временную папку: {output_dir}")
-        
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         
