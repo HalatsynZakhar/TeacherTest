@@ -11,7 +11,7 @@ from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
 import tempfile
-from .template_generator import create_test_template, create_answer_key_template
+from .template_generator import create_test_template
 from .neural_query_generator import create_neural_query_document
 
 def format_number_with_comma(number: float, decimals: int = 1) -> str:
@@ -560,9 +560,9 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
         # Создаем строку с весами через запятую
         weights_str = ",".join(str(q['weight']) for q in variant['questions'])
         data.append({
-            'Вариант': variant['variant_number'],
-            'Ответы': answers_str,
-            'Веса': weights_str
+            'Варіант': variant['variant_number'],
+            'Відповіді': answers_str,
+            'Ваги': weights_str
         })
     
     # Создаем DataFrame и сохраняем в Excel
@@ -589,13 +589,13 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
         key_df = pd.read_excel(answer_key_file)
         
         # Находим строку с нужным вариантом
-        variant_row = key_df[key_df['Вариант'] == variant_number]
+        variant_row = key_df[key_df['Варіант'] == variant_number]
         if variant_row.empty:
             raise ValueError(f"Вариант {variant_number} не найден в файле-ключе")
         
         # Извлекаем ответы и веса
-        answers_str = variant_row['Ответы'].iloc[0]
-        weights_str = variant_row['Веса'].iloc[0]
+        answers_str = variant_row['Відповіді'].iloc[0]
+        weights_str = variant_row['Ваги'].iloc[0]
         
         # Парсим ответы и веса
         answer_key = []
@@ -603,10 +603,9 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
         
         for ans in str(answers_str).split(','):
             ans = ans.strip()
-            try:
-                answer_key.append(int(ans))
-            except ValueError:
-                answer_key.append(ans)
+            # Сохраняем ответы как строки, чтобы сохранить исходный формат
+            # Это позволит различать '3' и '03' для открытых заданий
+            answer_key.append(ans)
         
         for weight in str(weights_str).split(','):
             weights.append(float(weight.strip()))
@@ -625,14 +624,15 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             question_points = (weight / total_weight) * total_points
             
             # Проверяем правильность ответа
-            # Определяем тип вопроса по типу правильного ответа
-            is_test_question = isinstance(correct_ans, int)
+            # Определяем тип вопроса: если правильный ответ состоит только из цифр, это тестовое задание
+            is_test_question = str(correct_ans).strip().isdigit()
             
             if is_test_question:
                 # Тестовое задание - сравниваем числа
                 try:
                     student_ans_int = int(student_ans)
-                    is_correct = student_ans_int == correct_ans
+                    correct_ans_int = int(correct_ans)
+                    is_correct = student_ans_int == correct_ans_int
                 except (ValueError, TypeError):
                     is_correct = False
                     student_ans_int = student_ans
@@ -1363,34 +1363,32 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         log.error(f"Ошибка при экспорте ответов в Word: {e}")
         raise
 
-def generate_excel_templates(output_dir: str) -> Tuple[str, str]:
+def generate_test_template(output_dir: str) -> str:
     """
-    Генерирует Excel шаблоны для тестов и ключей ответов.
+    Генерує Excel шаблон для тестів.
     
     Args:
-        output_dir: Директория для сохранения шаблонов
+        output_dir: Директорія для збереження шаблону
         
     Returns:
-        Tuple с путями к созданным шаблонам (тест, ключ)
+        Шлях до створеного шаблону
     """
     try:
-        # Создаем директорию если не существует
+        # Створюємо директорію якщо не існує
         os.makedirs(output_dir, exist_ok=True)
         
-        # Пути к шаблонам
-        test_template_path = os.path.join(output_dir, "Шаблон_теста.xlsx")
-        answer_key_template_path = os.path.join(output_dir, "Шаблон_ключа_ответов.xlsx")
+        # Шлях до шаблону
+        test_template_path = os.path.join(output_dir, "Шаблон_тесту.xlsx")
         
-        # Создаем шаблоны
+        # Створюємо шаблон
         create_test_template(test_template_path)
-        create_answer_key_template(answer_key_template_path)
         
-        log.info(f"Созданы шаблоны: {test_template_path}, {answer_key_template_path}")
+        log.info(f"Створено шаблон: {test_template_path}")
         
-        return test_template_path, answer_key_template_path
+        return test_template_path
         
     except Exception as e:
-        log.error(f"Ошибка при создании шаблонов: {e}")
+        log.error(f"Помилка при створенні шаблону: {e}")
         raise
 
 def generate_neural_query_document(output_dir: str) -> str:

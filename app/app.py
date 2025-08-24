@@ -33,7 +33,7 @@ from core.processor import (
     create_test_word,
     read_test_word,
     export_answers_to_word,
-    generate_excel_templates,
+    generate_test_template,
     generate_neural_query_document
 )
 
@@ -397,65 +397,46 @@ def main():
     
     # Секция скачивания шаблонов
     st.subheader("📋 Шаблони для роботи")
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    col1, col2 = st.columns([1, 1])
     
     with col1:
-        if st.button("📥 Завантажити шаблон тесту", help="Завантажити Excel шаблон для створення тестів"):
-            try:
-                temp_dir = ensure_temp_dir("templates_")
-                test_template_path, _ = generate_excel_templates(temp_dir)
-                
-                with open(test_template_path, 'rb') as file:
-                    st.download_button(
-                        label="💾 Зберегти шаблон тесту",
-                        data=file.read(),
-                        file_name="Шаблон_теста.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                add_log_message("Шаблон тесту згенеровано успішно")
-            except Exception as e:
-                st.error(f"Помилка при створенні шаблону тесту: {e}")
-                add_log_message(f"Помилка створення шаблону тесту: {e}", "ERROR")
+        try:
+            temp_dir = ensure_temp_dir("templates_")
+            test_template_path = generate_test_template(temp_dir)
+            
+            with open(test_template_path, 'rb') as file:
+                st.download_button(
+                     label="📥 Завантажити шаблон тесту",
+                     data=file.read(),
+                     file_name="Шаблон_тесту.xlsx",
+                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     help="Завантажити Excel шаблон для створення тестів"
+                 )
+            add_log_message("Шаблон тесту згенеровано успішно")
+        except Exception as e:
+            st.error(f"Помилка при створенні шаблону тесту: {e}")
+            add_log_message(f"Помилка створення шаблону тесту: {e}", "ERROR")
     
     with col2:
-        if st.button("📥 Завантажити шаблон ключа", help="Завантажити Excel шаблон для ключів відповідей"):
-            try:
-                temp_dir = ensure_temp_dir("templates_")
-                _, answer_key_template_path = generate_excel_templates(temp_dir)
-                
-                with open(answer_key_template_path, 'rb') as file:
-                    st.download_button(
-                        label="💾 Зберегти шаблон ключа",
-                        data=file.read(),
-                        file_name="Шаблон_ключа_ответов.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                add_log_message("Шаблон ключа відповідей згенеровано успішно")
-            except Exception as e:
-                st.error(f"Помилка при створенні шаблону ключа: {e}")
-                add_log_message(f"Помилка створення шаблону ключа: {e}", "ERROR")
+        try:
+            temp_dir = ensure_temp_dir("templates_")
+            query_doc_path = generate_neural_query_document(temp_dir)
+            
+            with open(query_doc_path, 'rb') as file:
+                st.download_button(
+                     label="🤖 Запит для нейромережі",
+                     data=file.read(),
+                     file_name="Запит_для_нейромережі.docx",
+                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                     help="Завантажити документ з запитом для генерації тестів через ШІ"
+                 )
+            add_log_message("Документ з запитом для нейромережі згенеровано успішно")
+        except Exception as e:
+            st.error(f"Помилка при створенні документа: {e}")
+            add_log_message(f"Помилка створення документа: {e}", "ERROR")
     
-    with col3:
-        if st.button("🤖 Запит для нейромережі", help="Завантажити документ з запитом для генерації тестів через ШІ"):
-            try:
-                temp_dir = ensure_temp_dir("templates_")
-                query_doc_path = generate_neural_query_document(temp_dir)
-                
-                with open(query_doc_path, 'rb') as file:
-                    st.download_button(
-                        label="💾 Зберегти запит для ШІ",
-                        data=file.read(),
-                        file_name="Запрос_для_нейросети.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    )
-                add_log_message("Документ з запитом для нейромережі згенеровано успішно")
-            except Exception as e:
-                st.error(f"Помилка при створенні документа: {e}")
-                add_log_message(f"Помилка створення документа: {e}", "ERROR")
-    
-    with col4:
-        st.info("💡 **Підказка:** Завантажте шаблони для правильного форматування ваших тестів та ключів відповідей. Шаблони містять детальні інструкції по заповненню.")
-    
+    st.info("💡 **Підказка:** Завантажте шаблон для правильного форматування ваших тестів. Шаблон містить детальні інструкції по заповненню. Використовуйте запит для нейромережі, щоб швидко згенерувати тести через ШІ.")
+     
     st.markdown("---")
     
     # Боковая панель с настройками
@@ -711,7 +692,7 @@ def main():
             result = st.session_state.check_result
             
             # Метрики
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 st.metric("Варіант", result['variant_number'])
             with col2:
@@ -720,6 +701,15 @@ def main():
                 st.metric("Правильних відповідей", result['correct_answers'])
             with col4:
                 st.metric("Відсоток", f"{result['score_percentage']:.1f}%")
+            with col5:
+                # Розрахунок балів по 12-бальній системі
+                weighted_score = result.get('weighted_score', 0)
+                max_score = result.get('max_score', result['total_questions'])
+                if max_score > 0:
+                    twelve_point_score = round((weighted_score / max_score) * 12, 1)
+                else:
+                    twelve_point_score = 0
+                st.metric("Бали (12-бальна)", f"{twelve_point_score}")
             
             # Кнопки для скачивания отчетов
             if hasattr(st.session_state, 'check_reports') and st.session_state.check_reports:

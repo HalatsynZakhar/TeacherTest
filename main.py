@@ -363,11 +363,14 @@ class TeacherTestApp:
             self.log_message(f"Word отчет создан: {word_report_path}")
             
             # Вывод результатов
+            weighted_score = check_result.get('weighted_score', 0)
+            max_score = check_result.get('max_score', 12)
             self.log_message(f"Результат проверки:")
             self.log_message(f"- Вариант: {check_result['variant_number']}")
             self.log_message(f"- Всего вопросов: {check_result['total_questions']}")
             self.log_message(f"- Правильных ответов: {check_result['correct_answers']}")
             self.log_message(f"- Процент: {check_result['score_percentage']:.1f}%")
+            self.log_message(f"- Бали: {weighted_score:.2f} з {max_score}")
             
             self.status_var.set("Проверка завершена")
             
@@ -376,7 +379,8 @@ class TeacherTestApp:
                 f"Проверка завершена!\n\n"
                 f"Вариант: {check_result['variant_number']}\n"
                 f"Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}\n"
-                f"Процент: {check_result['score_percentage']:.1f}%\n\n"
+                f"Процент: {check_result['score_percentage']:.1f}%\n"
+                f"Бали: {weighted_score:.2f} з {max_score}\n\n"
                 f"Созданы отчеты:\n"
                 f"- PDF: {os.path.basename(pdf_report_path)}\n"
                 f"- Word: {os.path.basename(word_report_path)}"
