@@ -693,8 +693,8 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                             question_options.append(str(question_detail[col].iloc[0]))
             
             # Перевіряємо правильність відповіді
-            # Визначаємо тип питання: якщо правильна відповідь складається тільки з цифр, це тестове завдання
-            is_test_question = str(correct_ans).strip().isdigit()
+            # Визначаємо тип питання: тестове питання має варіанти відповідей, відкрите - не має
+            is_test_question = len(question_options) > 0
             
             if is_test_question:
                 # Тестове завдання - порівнюємо числа
@@ -1049,14 +1049,29 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     pass
                 
                 for j, option in enumerate(question_options, 1):
-                    # Форматируем число правильно
-                    if isinstance(option, (int, float)):
-                        if option == int(option):
-                            formatted_option = str(int(option))
+                    # Форматируем число правильно, используя ту же логику что и при генерации
+                    def format_option_value(value):
+                        if isinstance(value, (int, float)):
+                            try:
+                                # Проверяем, является ли число целым
+                                if float(value) == int(float(value)):
+                                    return str(int(float(value)))
+                                else:
+                                    return f"{float(value):.10g}".replace('.', ',')
+                            except (ValueError, TypeError):
+                                return str(value).strip()
                         else:
-                            formatted_option = f"{option:.10g}".replace('.', ',')
-                    else:
-                        formatted_option = str(option)
+                            # Для строковых значений пытаемся преобразовать в число
+                            try:
+                                num_value = float(str(value).replace(',', '.'))
+                                if num_value == int(num_value):
+                                    return str(int(num_value))
+                                else:
+                                    return f"{num_value:.10g}".replace('.', ',')
+                            except (ValueError, TypeError):
+                                return str(value).strip()
+                    
+                    formatted_option = format_option_value(option)
                     
                     option_para = doc.add_paragraph()
                     option_text = f'{j}. {formatted_option}'
@@ -1083,26 +1098,34 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             if not result.get('is_test_question'):
                 answers_para = doc.add_paragraph()
                 
-                # Форматируем ответы правильно
+                # Форматируем ответы правильно, используя ту же логику что и при генерации
                 student_answer = result['student_answer']
                 correct_answer = result['correct_answer']
                 
-                # Применяем правильное форматирование чисел
-                if isinstance(student_answer, (int, float)):
-                    if student_answer == int(student_answer):
-                        formatted_student = str(int(student_answer))
+                # Применяем правильное форматирование чисел как при генерации вариантов
+                def format_answer_value(value):
+                    if isinstance(value, (int, float)):
+                        try:
+                            # Проверяем, является ли число целым
+                            if float(value) == int(float(value)):
+                                return str(int(float(value)))
+                            else:
+                                return f"{float(value):.10g}".replace('.', ',')
+                        except (ValueError, TypeError):
+                            return str(value).strip()
                     else:
-                        formatted_student = f"{student_answer:.10g}".replace('.', ',')
-                else:
-                    formatted_student = str(student_answer)
+                        # Для строковых значений пытаемся преобразовать в число
+                        try:
+                            num_value = float(str(value).replace(',', '.'))
+                            if num_value == int(num_value):
+                                return str(int(num_value))
+                            else:
+                                return f"{num_value:.10g}".replace('.', ',')
+                        except (ValueError, TypeError):
+                            return str(value).strip()
                 
-                if isinstance(correct_answer, (int, float)):
-                    if correct_answer == int(correct_answer):
-                        formatted_correct = str(int(correct_answer))
-                    else:
-                        formatted_correct = f"{correct_answer:.10g}".replace('.', ',')
-                else:
-                    formatted_correct = str(correct_answer)
+                formatted_student = format_answer_value(student_answer)
+                formatted_correct = format_answer_value(correct_answer)
                 
                 answers_para.add_run('Відповіді: ').bold = True
                 answers_para.add_run('Учень обрав: ')
