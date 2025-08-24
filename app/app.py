@@ -197,8 +197,8 @@ if 'variant_number' not in st.session_state:
     st.session_state.variant_number = 1
 if 'student_answers' not in st.session_state:
     st.session_state.student_answers = ""
-if 'columns_count' not in st.session_state:
-    st.session_state.columns_count = 1
+if 'answer_format' not in st.session_state:
+    st.session_state.answer_format = 'list'  # 'list' или 'table'
 if 'student_class' not in st.session_state:
     st.session_state.student_class = ""
 if 'student_full_name' not in st.session_state:
@@ -298,7 +298,7 @@ def generate_tests():
         add_log_message(f"Создан Excel файл-ключ")
         
         # Создаем Word файл с тестами
-        test_word_path = create_test_word(variants, output_dir, st.session_state.columns_count, st.session_state.input_file_name)
+        test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format)
         add_log_message(f"Создан Word файл с тестами")
         
         # Создаем Word файл с ответами
@@ -402,11 +402,12 @@ def main():
                 value=st.session_state.variants_count
             )
             
-            st.session_state.columns_count = st.selectbox(
-                "Кількість колонок для питань:",
-                options=[1, 2, 3],
-                index=st.session_state.columns_count - 1,
-                help="Виберіть кількість колонок для розміщення питань у PDF та Word документах"
+            st.session_state.answer_format = st.selectbox(
+                "Формат варіантів відповідей:",
+                options=['list', 'table'],
+                format_func=lambda x: 'Список' if x == 'list' else 'Таблиця',
+                index=0 if st.session_state.answer_format == 'list' else 1,
+                help="Виберіть формат відображення варіантів відповідей: список або таблиця"
             )
         else:
             st.subheader("Налаштування перевірки")

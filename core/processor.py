@@ -817,13 +817,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             raise
 
 
-def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "") -> str:
+def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list") -> str:
     """Создать Word документ с тестами для всех вариантов
     
     Args:
         variants: Список вариантов тестов
         output_dir: Папка для сохранения файлов
-        columns: Количество колонок для размещения вопросов (1-3)
+        columns: Количество колонок для размещения вопросов (всегда 1)
+        input_file_name: Имя входного файла
+        answer_format: Формат вариантов ответов ('list' или 'table')
     """
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -846,54 +848,39 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             
             doc.add_paragraph()  # Пустая строка
             
-            # Вопросы с поддержкой колонок
-            num_columns = max(1, min(3, columns))  # Ограничиваем от 1 до 3 колонок
-            
-            if num_columns == 1:
-                # Обычная компоновка в одну колонку
-                for i, question in enumerate(variant['questions'], 1):
-                    # Текст вопроса
-                    question_para = doc.add_paragraph(f"{i}. {question['question_text']}")
-                    question_para.runs[0].bold = True
-                    
-                    # Варианты ответов
-                    for j, option in enumerate(question['options'], 1):
-                        option_para = doc.add_paragraph(f"   {j}) {option}")
-                        # Убираем автоматическую нумерацию стиля, чтобы избежать глобального счетчика
-                        option_para.style = 'Normal'
-                    
-                    doc.add_paragraph()  # Пустая строка между вопросами
-            else:
-                # Многоколоночная компоновка с использованием встроенных колонок Word
-                questions = variant['questions']
+            # Вопросы в одноколоночной компоновке
+            for i, question in enumerate(variant['questions'], 1):
+                # Текст вопроса
+                question_para = doc.add_paragraph(f"{i}. {question['question_text']}")
+                question_para.runs[0].bold = True
                 
-                # Создаем XML для колонок
-                from docx.oxml import parse_xml
-                cols_xml = f'<w:cols xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:num="{num_columns}" w:space="708"/>'
-                
-                # Применяем колонки к текущей секции
-                section = doc.sections[-1]
-                section._sectPr.append(parse_xml(cols_xml))
-                
-                # Добавляем все вопросы последовательно - Word автоматически распределит их по колонкам
-                for i, question in enumerate(questions, 1):
-                    # Текст вопроса
-                    question_para = doc.add_paragraph(f"{i}. {question['question_text']}")
-                    question_para.runs[0].bold = True
+                # Варианты ответов в зависимости от формата
+                if answer_format == 'table':
+                    # Табличный формат - варианты ответов в таблице по ширине страницы
+                    options = question['options']
+                    num_options = len(options)
                     
-                    # Варианты ответов
+                    # Создаем таблицу с одной строкой и количеством колонок равным количеству вариантов
+                    table = doc.add_table(rows=1, cols=num_options)
+                    table.style = 'Table Grid'
+                    
+                    # Растягиваем таблицу по всей ширине страницы
+                    table.autofit = False
+                    for col_idx, col in enumerate(table.columns):
+                        col.width = Inches(6.5 / num_options)  # Равномерно распределяем по ширине
+                    
+                    # Заполняем ячейки вариантами ответов
+                    cells = table.rows[0].cells
+                    for j, option in enumerate(options):
+                        cells[j].text = f"{j + 1}) {option}"
+                        cells[j].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                else:
+                    # Списочный формат - обычные варианты ответов
                     for j, option in enumerate(question['options'], 1):
                         option_para = doc.add_paragraph(f"   {j}) {option}")
                         option_para.style = 'Normal'
-                    
-                    # Пустая строка между вопросами (кроме последнего)
-                    if i < len(questions):
-                        doc.add_paragraph()
                 
-                # Возвращаем обычную компоновку для следующих разделов
-                new_section = doc.add_section()
-                cols_reset_xml = '<w:cols xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:num="1"/>'
-                new_section._sectPr.append(parse_xml(cols_reset_xml))
+                doc.add_paragraph()  # Пустая строка между вопросами
             
             # Таблица для ответов - сразу после теста, без разрыва страницы
             # Всегда по 15 элементов в строке, последняя строка дополняется пустыми ячейками
@@ -923,14 +910,34 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     if current_q < total_questions:
                         header_cells[i].text = str(current_q + 1)
                         current_q += 1
+                        header_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     else:
-                        header_cells[i].text = ""  # Пустая ячейка для выравнивания ширины
-                    header_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        # Пустая ячейка без рамок
+                        header_cells[i].text = ""
+                        # Убираем рамки для пустых ячеек
+                        from docx.oxml.shared import qn
+                        tc = header_cells[i]._tc
+                        tcPr = tc.get_or_add_tcPr()
+                        tcBorders = tcPr.find(qn('w:tcBorders'))
+                        if tcBorders is None:
+                            tcBorders = parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>')
+                            tcPr.append(tcBorders)
                 
                 # Пустая строка для ответов
                 answer_cells = table.rows[1].cells
-                for cell in answer_cells:
-                    cell.text = ""
+                for i, cell in enumerate(answer_cells):
+                    if i < total_questions - (row_idx * questions_per_row):
+                        cell.text = ""
+                    else:
+                        # Пустая ячейка без рамок
+                        cell.text = ""
+                        from docx.oxml.shared import qn
+                        tc = cell._tc
+                        tcPr = tc.get_or_add_tcPr()
+                        tcBorders = tcPr.find(qn('w:tcBorders'))
+                        if tcBorders is None:
+                            tcBorders = parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>')
+                            tcPr.append(tcBorders)
                 
                 # Добавляем небольшой отступ между строками таблиц
                 if row_idx < num_rows - 1:
