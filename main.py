@@ -344,7 +344,17 @@ class TeacherTestApp:
             # Парсинг відповідей учня
             answers_text = self.student_answers_text.get().strip()
             try:
-                student_answers = [x.strip() for x in answers_text.split(',') if x.strip()]
+                # Розділяємо по комах, зберігаючи порожні відповіді
+                raw_answers = answers_text.split(',')
+                student_answers = []
+                
+                for i, answer in enumerate(raw_answers):
+                    answer = answer.strip()
+                    if not answer:  # Порожня відповідь
+                        student_answers.append("")
+                    else:
+                        student_answers.append(answer)
+                        
             except ValueError:
                 raise ValueError("Відповіді повинні бути розділені комами")
             

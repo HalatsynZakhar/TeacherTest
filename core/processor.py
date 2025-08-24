@@ -698,27 +698,44 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             
             if is_test_question:
                 # Тестове завдання - порівнюємо числа
-                try:
-                    student_ans_int = int(student_ans)
-                    correct_ans_int = int(correct_ans)
-                    
-                    # Перевіряємо, що відповідь учня знаходиться в допустимому діапазоні
-                    num_options = len(question_options)
-                    if student_ans_int < 1 or student_ans_int > num_options:
-                        is_correct = False
-                        # Додаємо інформацію про помилку в результат
-                        student_ans_int = f"{student_ans} (недопустиме значення, має бути від 1 до {num_options})"
-                    else:
-                        is_correct = student_ans_int == correct_ans_int
-                except (ValueError, TypeError):
+                # Перевіряємо чи відповідь не порожня
+                if not student_ans or str(student_ans).strip() == "":
+                    # Для тестових питань порожня відповідь вважається неправильною
                     is_correct = False
-                    student_ans_int = f"{student_ans} (не є числом)"
+                    student_ans_int = "(не заповнено)"
+                else:
+                    try:
+                        student_ans_int = int(student_ans)
+                        correct_ans_int = int(correct_ans)
+                        
+                        # Перевіряємо, що відповідь учня знаходиться в допустимому діапазоні
+                        num_options = len(question_options)
+                        if student_ans_int < 1 or student_ans_int > num_options:
+                            # Спеціальне повідомлення для 0
+                            if student_ans_int == 0:
+                                raise ValueError(f"Питання {i+1}: значення '0' є числом, але не підходить для тестових питань. Введіть число від 1 до {num_options}")
+                            else:
+                                raise ValueError(f"Питання {i+1}: значення '{student_ans}' не підходить. Введіть число від 1 до {num_options}")
+                        else:
+                            is_correct = student_ans_int == correct_ans_int
+                    except (ValueError, TypeError) as e:
+                        # Якщо це вже наше повідомлення про помилку, передаємо його далі
+                        if "Питання" in str(e):
+                            raise e
+                        # Інакше створюємо нове повідомлення
+                        raise ValueError(f"Питання {i+1}: відповідь '{student_ans}' не є числом. Для тестових питань введіть число від 1 до {len(question_options)}")
             else:
                 # Відкрите завдання - порівнюємо рядки з нормалізацією
-                student_str = str(student_ans).strip().lower()
-                correct_str = str(correct_ans).strip().lower()
-                is_correct = student_str == correct_str
-                student_ans_int = student_ans
+                # Перевіряємо чи відповідь не порожня
+                if not student_ans or str(student_ans).strip() == "":
+                    # Для відкритих питань порожня відповідь вважається неправильною
+                    is_correct = False
+                    student_ans_int = "(не заповнено)"
+                else:
+                    student_str = str(student_ans).strip().lower()
+                    correct_str = str(correct_ans).strip().lower()
+                    is_correct = student_str == correct_str
+                    student_ans_int = student_ans
             
             if is_correct:
                 correct_weighted_score += question_points

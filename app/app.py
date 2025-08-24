@@ -357,7 +357,17 @@ def check_answers():
         
         # Парсимо відповіді учня
         try:
-            student_answers = [x.strip() for x in st.session_state.student_answers.split(',') if x.strip()]
+            # Розділяємо по комах, зберігаючи порожні відповіді
+            raw_answers = st.session_state.student_answers.split(',')
+            student_answers = []
+            
+            for i, answer in enumerate(raw_answers):
+                answer = answer.strip()
+                if not answer:  # Порожня відповідь
+                    student_answers.append("")
+                else:
+                    student_answers.append(answer)
+                    
         except ValueError:
             raise ValueError("Відповіді повинні бути розділені комами")
         
