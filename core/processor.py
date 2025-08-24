@@ -107,13 +107,9 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Читаем Excel файл
         df = pd.read_excel(file_path, header=None)
         
-        # Конвертируем только текстовые столбцы в строки, оставляя числовые как есть
-        # Столбец 0 (вопросы) и столбцы с вариантами ответов - в строки
-        for col in [0] + list(range(3, df.shape[1])):
-            if col < df.shape[1]:
-                df[df.columns[col]] = df[df.columns[col]].astype(str)
-        
-        # Столбцы 1 (правильный ответ) и 2 (вес) оставляем как есть для корректной обработки
+        # Конвертируем только столбец с вопросами в строки
+        # Остальные столбцы оставляем как есть для сохранения исходного форматирования
+        df[df.columns[0]] = df[df.columns[0]].astype(str)
         
         # Проверяем минимальную структуру (вопрос + правильный ответ + вес + минимум 2 варианта)
         if df.shape[1] < 3:
@@ -133,20 +129,62 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         df['weight'] = pd.to_numeric(df['weight'], errors='coerce')
         df['weight'] = df['weight'].fillna(1.0)  # Заполняем пустые значения единицей
         
-        # Определяем тип задания: тестовое или нетестовое
-        df['is_test_question'] = df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        # Определяем тип задания: тестовое (с вариантами) или открытое (без вариантов)
+        # Подсчитываем количество непустых вариантов ответов для каждого вопроса
+        option_cols = [col for col in df.columns if col.startswith('option_')]
+        df['option_count'] = 0
+        for col in option_cols:
+            df['option_count'] += df[col].notna() & (df[col] != 'nan') & (df[col].astype(str).str.strip() != '')
+        
+        # Проверяем обязательное заполнение правильного ответа
+        missing_answers = df['correct_answer'].isna() | (df['correct_answer'] == 'nan') | (df['correct_answer'].astype(str).str.strip() == '')
+        if missing_answers.any():
+            missing_questions = df[missing_answers]['question'].tolist()
+            log.warning(f"Найдены вопросы без правильного ответа: {missing_questions[:3]}{'...' if len(missing_questions) > 3 else ''}")
+            df = df[~missing_answers]  # Удаляем вопросы без правильного ответа
+        
+        # Задание считается тестовым если есть 2 или более вариантов ответов
+        # Если 0 или 1 вариант ответа, то это открытое задание
+        df['is_test_question'] = (df['option_count'] >= 2) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        
+        # Приводим столбец correct_answer к object типу для избежания предупреждений
+        df['correct_answer'] = df['correct_answer'].astype('object')
         
         # Для тестовых заданий проверяем правильные ответы
         test_mask = df['is_test_question']
         if test_mask.any():
-            df.loc[test_mask, 'correct_answer'] = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
+            # Сначала преобразуем в числа для валидации
+            numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
             # Удаляем тестовые вопросы с некорректными ответами
-            df = df[~(test_mask & df['correct_answer'].isna())]
+            valid_test_mask = test_mask & numeric_answers.notna()
+            df = df[~(test_mask & numeric_answers.isna())]
+            
+            # Форматируем правильные ответы для тестовых заданий (убираем .0 для целых чисел)
+            for idx in df[valid_test_mask].index:
+                if idx in df.index:  # Проверяем, что индекс еще существует после фильтрации
+                    answer_value = numeric_answers.loc[idx]
+                    if answer_value == int(answer_value):
+                        df.at[idx, 'correct_answer'] = str(int(answer_value))
+                    else:
+                        df.at[idx, 'correct_answer'] = str(answer_value)
         
-        # Для нетестовых заданий сохраняем правильный ответ как текст
-        non_test_mask = ~df['is_test_question']
-        if non_test_mask.any():
-            df.loc[non_test_mask, 'correct_answer'] = df.loc[non_test_mask, 'correct_answer'].astype(str)
+        # Для открытых заданий сохраняем правильный ответ как текст
+        open_mask = ~df['is_test_question'] & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        if open_mask.any():
+            # Для открытых заданий форматируем ответ правильно
+            for idx in df[open_mask].index:
+                answer_value = df.loc[idx, 'correct_answer']
+                # Если это число, форматируем без лишних .0
+                if isinstance(answer_value, (int, float)) and answer_value == int(answer_value):
+                    df.at[idx, 'correct_answer'] = str(int(answer_value))
+                else:
+                    df.at[idx, 'correct_answer'] = str(answer_value).strip()
+        
+        # Удаляем временный столбец
+        df = df.drop('option_count', axis=1)
+        
+        # Приводим столбец correct_answer к строковому типу для совместимости с PyArrow
+        df['correct_answer'] = df['correct_answer'].astype(str)
         
         log.info(f"Загружено {len(df)} вопросов из файла {file_path}")
         return df
@@ -189,12 +227,30 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
                 # Тестовое задание с вариантами ответов
                 options = []
                 for col in df.columns:
-                    if col.startswith('option_') and pd.notna(row[col]):
-                        options.append(str(row[col]))
+                    if col.startswith('option_') and pd.notna(row[col]) and str(row[col]).strip() != '' and str(row[col]) != 'nan':
+                        # Сохраняем исходное форматирование чисел
+                        value = row[col]
+                        if isinstance(value, (int, float)):
+                            # Для чисел: целые без .0, дробные как есть
+                            if isinstance(value, float) and value.is_integer():
+                                options.append(str(int(value)))
+                            else:
+                                options.append(str(value))
+                        else:
+                            options.append(str(value).strip())
                 
                 if len(options) < 2:
                     log.warning(f"Тестовый вопрос '{row['question']}' имеет менее 2 вариантов ответов, пропускаем")
                     continue
+                
+                # Проверяем корректность индекса правильного ответа
+                correct_answer_idx = int(row['correct_answer']) - 1  # -1 так как нумерация с 1
+                if correct_answer_idx < 0 or correct_answer_idx >= len(options):
+                    log.warning(f"Некорректный индекс правильного ответа {row['correct_answer']} для вопроса '{row['question']}', пропускаем")
+                    continue
+                
+                # Находим правильный ответ по индексу
+                correct_option_text = options[correct_answer_idx]
                 
                 # Перемешиваем варианты ответов
                 random.seed(variant_num + idx)  # Для воспроизводимости
@@ -202,7 +258,6 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
                 random.shuffle(shuffled_options)
                 
                 # Находим новую позицию правильного ответа
-                correct_option_text = options[int(row['correct_answer']) - 1]  # -1 так как нумерация с 1
                 new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерации с 1
                 
                 question_data.update({
@@ -210,9 +265,13 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
                     'correct_answer': new_correct_position
                 })
             else:
-                # Нетестовое задание
+                # Открытое задание (без вариантов ответов)
+                # Обрабатываем правильный ответ как текстовые данные
+                formatted_answer = str(row['correct_answer']).strip()
+                
                 question_data.update({
-                    'correct_answer': str(row['correct_answer'])
+                    'correct_answer': formatted_answer,
+                    'options': []  # Открытые вопросы не имеют вариантов ответов
                 })
             
             variant['questions'].append(question_data)
@@ -221,7 +280,7 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int) -> List[Dict[str
             if row['is_test_question']:
                 variant['answer_key'].append(new_correct_position)
             else:
-                variant['answer_key'].append(str(row['correct_answer']))
+                variant['answer_key'].append(formatted_answer)
         
         variants.append(variant)
         log.info(f"Сгенерирован вариант {variant_num} с {len(variant['questions'])} вопросами")
@@ -516,8 +575,10 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                     is_correct = False
                     student_ans_int = student_ans
             else:
-                # Нетестовое задание - сравниваем строки
-                is_correct = str(student_ans).strip() == str(correct_ans).strip()
+                # Открытое задание - сравниваем строки с нормализацией
+                student_str = str(student_ans).strip().lower()
+                correct_str = str(correct_ans).strip().lower()
+                is_correct = student_str == correct_str
                 student_ans_int = student_ans
             
             if is_correct:
@@ -803,6 +864,9 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 run = result_paragraph.add_run("✗ Неправильно")
                 run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
         
+        # Добавляем разрыв страницы сразу после таблицы результатов
+        doc.add_page_break()
+        
         doc.save(word_path)
         log.info(f"Создан Word документ с результатами проверки: {word_path}")
         return word_path
@@ -893,6 +957,9 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     else:
                         run = result_paragraph.add_run("✗ Неправильно")
                         run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
+                
+                # Добавляем разрыв страницы сразу после таблицы результатов
+                doc.add_page_break()
                 
                 doc.save(word_path)
                 log.info(f"Создан Word документ с результатами проверки (fallback): {word_path}")
