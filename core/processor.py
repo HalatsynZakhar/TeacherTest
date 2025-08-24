@@ -1693,7 +1693,7 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         if input_file_name:
-            word_path = os.path.join(output_dir, f"{input_file_name}_ключ_{timestamp}.docx")
+            word_path = os.path.join(output_dir, f"{input_file_name}_Відповіді_{timestamp}.docx")
         else:
             word_path = os.path.join(output_dir, f"answers_{timestamp}.docx")
         
