@@ -103,8 +103,8 @@ def create_neural_query_document(output_path: str):
         
         # Сохраняем документ
         doc.save(output_path)
-        log.info(f"Документ с запросом для нейросети создан: {output_path}")
+        log.info(f"Документ з запитом для нейромережі створено: {output_path}")
         
     except Exception as e:
-        log.error(f"Ошибка при создании документа с запросом: {e}")
+        log.error(f"Помилка при створенні документа з запитом: {e}")
         raise

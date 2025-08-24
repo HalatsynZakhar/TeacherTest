@@ -41,7 +41,7 @@ from core.processor import (
 log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
 os.makedirs(log_dir, exist_ok=True)
 
-# Ограничиваем количество файлов логов до 5 последних
+# Обмежуємо кількість файлів логів до 5 останніх
 log_files = sorted([f for f in os.listdir(log_dir) if f.startswith('teacher_test_')])
 if len(log_files) > 5:
     for old_log in log_files[:-5]:
@@ -50,7 +50,7 @@ if len(log_files) > 5:
         except:
             pass
 
-# Создаем новый лог-файл
+# Створюємо новий лог-файл
 log_file = os.path.join(log_dir, 'teacher_test_latest.log')
 try:
     with open(log_file, 'w', encoding='utf-8') as f:
@@ -80,7 +80,7 @@ sys.stderr.reconfigure(encoding='utf-8')
 
 log = logging.getLogger(__name__)
 
-# Определяем настройки по умолчанию для TeacherTest
+# Визначаємо налаштування за замовчуванням для TeacherTest
 default_settings = {
     "test_settings": {
         "default_variants_count": 10,
@@ -133,7 +133,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Функция для создания временных директорий
+# Функція для створення тимчасових директорій
 def ensure_temp_dir(prefix: str = "") -> str:
     """Создает и возвращает путь к временной директории"""
     project_dir = os.path.dirname(os.path.dirname(__file__))
@@ -141,21 +141,21 @@ def ensure_temp_dir(prefix: str = "") -> str:
     
     try:
         os.makedirs(temp_dir, exist_ok=True)
-        log.info(f"Создана/проверена временная директория: {temp_dir}")
+        log.info(f"Створена/перевірена тимчасова директорія: {temp_dir}")
     except Exception as e:
-        log.error(f"Ошибка при создании временной директории {temp_dir}: {e}")
+        log.error(f"Помилка при створенні тимчасової директорії {temp_dir}: {e}")
         temp_dir = os.path.join(tempfile.gettempdir(), f"{prefix}teachertest")
         try:
             os.makedirs(temp_dir, exist_ok=True)
         except Exception as e2:
-            log.error(f"Ошибка при создании системной временной директории: {e2}")
+            log.error(f"Помилка при створенні системної тимчасової директорії: {e2}")
             raise e2
     
     return temp_dir
 
-# Функция очистки временных файлов
+# Функція очищення тимчасових файлів
 def cleanup_temp_files():
-    """Очистка временных файлов при запуске приложения"""
+    """Очищення тимчасових файлів при запуску додатка"""
     try:
         project_dir = os.path.dirname(os.path.dirname(__file__))
         temp_dir = os.path.join(project_dir, "temp")
@@ -165,15 +165,15 @@ def cleanup_temp_files():
                 file_path = os.path.join(temp_dir, filename)
                 try:
                     if os.path.isfile(file_path):
-                        # Проверяем возраст файла (удаляем файлы старше 1 дня)
+                        # Перевіряємо вік файла (видаляємо файли старше 1 дня)
                         file_age = time.time() - os.path.getmtime(file_path)
                         if file_age > 86400:  # 24 часа в секундах
                             os.remove(file_path)
-                            log.info(f"Удален старый временный файл: {filename}")
+                            log.info(f"Видалено старий тимчасовий файл: {filename}")
                 except Exception as e:
-                    log.warning(f"Не удалось удалить временный файл {filename}: {e}")
+                    log.warning(f"Не вдалося видалити тимчасовий файл {filename}: {e}")
     except Exception as e:
-        log.error(f"Ошибка при очистке временных файлов: {e}")
+        log.error(f"Помилка при очищенні тимчасових файлів: {e}")
 
 # Очистка при запуске
 cleanup_temp_files()
@@ -190,7 +190,7 @@ if 'processing_error' not in st.session_state:
 if 'output_files' not in st.session_state:
     st.session_state.output_files = {}
 if 'mode' not in st.session_state:
-    st.session_state.mode = 1  # 1 - генерация тестов, 2 - проверка работ
+    st.session_state.mode = 1  # 1 - генерація тестів, 2 - перевірка робіт
 if 'variants_count' not in st.session_state:
     st.session_state.variants_count = cm.get_setting('test_settings.default_variants_count', 10)
 if 'answer_key_file' not in st.session_state:
@@ -217,6 +217,8 @@ if 'question_shuffle_mode' not in st.session_state:
     st.session_state.question_shuffle_mode = 'full'  # 'full', 'easy_to_hard', 'none'
 if 'answer_shuffle_mode' not in st.session_state:
     st.session_state.answer_shuffle_mode = 'random'  # 'random', 'none'
+if 'last_error' not in st.session_state:
+    st.session_state.last_error = None
 
 def add_log_message(message, level="INFO"):
     """Добавление сообщения в лог"""
@@ -228,11 +230,11 @@ def add_log_message(message, level="INFO"):
     
     st.session_state.log_messages.append(log_entry)
     
-    # Ограничиваем количество сообщений в логе
+    # Обмежуємо кількість повідомлень у лозі
     if len(st.session_state.log_messages) > 100:
         st.session_state.log_messages = st.session_state.log_messages[-100:]
     
-    # Логируем в файл
+    # Логуємо у файл
     if level == "ERROR":
         log.error(message)
     elif level == "WARNING":
@@ -241,57 +243,60 @@ def add_log_message(message, level="INFO"):
         log.info(message)
 
 def load_file(uploaded_file_arg=None):
-    """Загрузка и обработка Excel или Word файла с вопросами"""
+    """Завантаження та обробка Excel або Word файла з питаннями"""
     try:
         if uploaded_file_arg is None:
             uploaded_file_arg = st.session_state.get('temp_file_path')
         
         if not uploaded_file_arg or not os.path.exists(uploaded_file_arg):
             st.session_state.df = None
-            st.session_state.processing_error = "Файл не найден"
+            st.session_state.processing_error = "Файл не знайдено"
             return
         
-        add_log_message(f"Загрузка файла: {os.path.basename(uploaded_file_arg)}")
+        add_log_message(f"Завантаження файла: {os.path.basename(uploaded_file_arg)}")
         
-        # Сохраняем имя файла без расширения для использования в именах выходных файлов
+        # Зберігаємо ім'я файла без розширення для використання в іменах вихідних файлів
         st.session_state.input_file_name = os.path.splitext(os.path.basename(uploaded_file_arg))[0]
         
-        # Определяем тип файла по расширению
+        # Визначаємо тип файла за розширенням
         file_extension = os.path.splitext(uploaded_file_arg)[1].lower()
         
         if file_extension in ['.xlsx', '.xls']:
-            # Читаем Excel файл с вопросами
+            # Читаємо Excel файл з питаннями
             df = read_test_excel(uploaded_file_arg)
         elif file_extension in ['.docx', '.doc']:
-            # Читаем Word файл с вопросами
+            # Читаємо Word файл з питаннями
             df = read_test_word(uploaded_file_arg)
         else:
             st.session_state.df = None
-            st.session_state.processing_error = "Неподдерживаемый формат файла. Используйте Excel (.xlsx, .xls) или Word (.docx, .doc)"
-            add_log_message("Неподдерживаемый формат файла", "ERROR")
+            st.session_state.processing_error = "Непідтримуваний формат файла. Використовуйте Excel (.xlsx, .xls) або Word (.docx, .doc)"
+            add_log_message("Непідтримуваний формат файла", "ERROR")
             return
         
         if df.empty:
             st.session_state.df = None
-            st.session_state.processing_error = "Файл не содержит данных или имеет неправильную структуру"
-            add_log_message("Файл пуст или имеет неправильную структуру", "ERROR")
+            st.session_state.processing_error = "Файл не містить даних або має неправильну структуру"
+            add_log_message("Файл порожній або має неправильну структуру", "ERROR")
             return
         
         st.session_state.df = df
         st.session_state.processing_error = None
-        add_log_message(f"Файл успешно загружен. Найдено {len(df)} вопросов", "SUCCESS")
+        add_log_message(f"Файл успішно завантажено. Знайдено {len(df)} питань", "SUCCESS")
         
     except Exception as e:
-        error_msg = f"Ошибка при загрузке файла: {str(e)}"
+        error_msg = f"Помилка при завантаженні файла: {str(e)}"
         st.session_state.processing_error = error_msg
         st.session_state.df = None
         add_log_message(error_msg, "ERROR")
-        log.error(f"Ошибка при загрузке файла: {e}", exc_info=True)
+        log.error(f"Помилка при завантаженні файла: {e}", exc_info=True)
 
 def generate_tests():
-    """Генерация тестов"""
+    """Генерація тестів"""
     try:
-        add_log_message("Начало генерации тестов")
+        # Очищуємо попередні помилки
+        st.session_state.last_error = None
+        
+        add_log_message("Початок генерації тестів")
         
         if st.session_state.df is None or st.session_state.df.empty:
             raise ValueError("Нет данных для генерации тестов")
@@ -303,56 +308,60 @@ def generate_tests():
             question_shuffle_mode=st.session_state.question_shuffle_mode,
             answer_shuffle_mode=st.session_state.answer_shuffle_mode
         )
-        add_log_message(f"Сгенерировано {len(variants)} вариантов тестов")
+        add_log_message(f"Згенеровано {len(variants)} варіантів тестів")
         
-        # Создаем временную папку для выходных файлов
+        # Створюємо тимчасову папку для вихідних файлів
         output_dir = ensure_temp_dir("output_")
         
-        # PDF файлы отключены - используем только Word и Excel
+        # PDF файли відключені - використовуємо тільки Word та Excel
         
-        # Создаем Excel файл-ключ
+        # Створюємо Excel файл-ключ
         excel_key_path = create_excel_answer_key(variants, output_dir, st.session_state.input_file_name)
-        add_log_message(f"Создан Excel файл-ключ")
+        add_log_message(f"Створено Excel файл-ключ")
         
-        # Создаем Word файл с тестами
+        # Створюємо Word файл з тестами
         test_word_path = create_test_word(variants, output_dir, 1, st.session_state.input_file_name, st.session_state.answer_format, st.session_state.space_optimization, st.session_state.test_class, st.session_state.test_date)
-        add_log_message(f"Создан Word файл с тестами")
+        add_log_message(f"Створено Word файл з тестами")
         
-        # Создаем Word файл с ответами
+        # Створюємо Word файл з відповідями
         answers_word_path = export_answers_to_word(variants, output_dir, st.session_state.input_file_name)
-        add_log_message(f"Создан Word файл с ответами")
+        add_log_message(f"Створено Word файл з відповідями")
         
-        # Сохраняем пути к файлам
+        # Зберігаємо шляхи до файлів
         st.session_state.output_files = {
             'excel_key': excel_key_path,
             'test_word': test_word_path,
             'answers_word': answers_word_path
         }
         
-        add_log_message("Генерация тестов завершена успешно", "SUCCESS")
+        add_log_message("Генерація тестів завершена успішно", "SUCCESS")
         return True
         
     except Exception as e:
-        error_msg = f"Ошибка при генерации тестов: {str(e)}"
+        error_msg = f"Помилка при генерації тестів: {str(e)}"
+        st.session_state.last_error = error_msg
         add_log_message(error_msg, "ERROR")
         log.error(error_msg, exc_info=True)
         return False
 
 def check_answers():
-    """Проверка ответов ученика"""
+    """Перевірка відповідей учня"""
     try:
-        add_log_message("Начало проверки ответов")
+        # Очищуємо попередні помилки
+        st.session_state.last_error = None
+        
+        add_log_message("Початок перевірки відповідей")
         
         if not st.session_state.answer_key_file:
-            raise ValueError("Не выбран файл-ключ")
+            raise ValueError("Не обрано файл-ключ")
         
-        # Парсим ответы ученика
+        # Парсимо відповіді учня
         try:
             student_answers = [x.strip() for x in st.session_state.student_answers.split(',') if x.strip()]
         except ValueError:
             raise ValueError("Ответы должны быть разделенными запятыми")
         
-        # Проверяем ответы
+        # Перевіряємо відповіді
         check_result = check_student_answers(
             st.session_state.answer_key_file,
             st.session_state.variant_number,
@@ -366,27 +375,28 @@ def check_answers():
         }
         check_result['student_info'] = student_info
         
-        # Создаем отчеты с результатами
+        # Створюємо звіти з результатами
         output_dir = ensure_temp_dir("reports_")
         
-        # Создаем PDF отчет
+        # Створюємо PDF звіт
         pdf_report_path = create_check_result_pdf(check_result, output_dir)
         
-        # Создаем Word отчет
+        # Створюємо Word звіт
         word_report_path = create_check_result_word(check_result, output_dir)
         
-        # Сохраняем результат и пути к отчетам
+        # Зберігаємо результат та шляхи до звітів
         st.session_state.check_result = check_result
         st.session_state.check_reports = {
             'pdf_report': pdf_report_path,
             'word_report': word_report_path
         }
         
-        add_log_message(f"Проверка завершена. Правильных ответов: {check_result['correct_answers']} из {check_result['total_questions']}", "SUCCESS")
+        add_log_message(f"Перевірка завершена. Правильних відповідей: {check_result['correct_answers']} з {check_result['total_questions']}", "SUCCESS")
         return True
         
     except Exception as e:
-        error_msg = f"Ошибка при проверке ответов: {str(e)}"
+        error_msg = f"Помилка при перевірці відповідей: {str(e)}"
+        st.session_state.last_error = error_msg
         add_log_message(error_msg, "ERROR")
         log.error(error_msg, exc_info=True)
         return False
@@ -443,7 +453,7 @@ def main():
     with st.sidebar:
         st.header("⚙️ Налаштування")
         
-        # Выбор режима работы
+        # Вибір режиму роботи
         st.session_state.mode = st.radio(
             "Режим роботи:",
             [1, 2],
@@ -476,7 +486,7 @@ def main():
                 help="Мінімізує кількість переводів рядків для економії місця (може погіршити читабельність)"
             )
             
-            # Настройки перемешивания
+            # Налаштування перемішування
             st.subheader("Налаштування перемішування")
             
             st.session_state.question_shuffle_mode = st.selectbox(
@@ -526,10 +536,10 @@ def main():
     
     # Основной контент
     if st.session_state.mode == 1:
-        # Режим 1: Генерация тестов
+        # Режим 1: Генерація тестів
         st.header("🎯 Режим 1: Генерація тестів")
         
-        # Загрузка Excel или Word файла с вопросами
+        # Завантаження Excel або Word файла з питаннями
         uploaded_file = st.file_uploader(
             "Оберіть Excel або Word файл з питаннями",
             type=["xlsx", "xls", "docx", "doc"],
@@ -537,11 +547,11 @@ def main():
         )
         
         if uploaded_file is not None:
-            # Сохраняем файл во временную папку
+            # Зберігаємо файл у тимчасову папку
             temp_dir = ensure_temp_dir()
             temp_file_path = os.path.join(temp_dir, uploaded_file.name)
             
-            # Проверяем, нужно ли обновить файл
+            # Перевіряємо, чи потрібно оновити файл
             need_update = (
                 not st.session_state.temp_file_path or 
                 not os.path.exists(st.session_state.temp_file_path) or
@@ -556,7 +566,7 @@ def main():
                 st.session_state.temp_file_path = temp_file_path
                 load_file()
             
-            # Отображение информации о файле
+            # Відображення інформації про файл
             if st.session_state.df is not None:
                 st.success(f"✅ Файл завантажено: {uploaded_file.name}")
                 st.info(f"📊 Знайдено питань: {len(st.session_state.df)}")
@@ -575,11 +585,15 @@ def main():
                         if success:
                             st.success("✅ Тести успішно згенеровано!")
                             st.rerun()
+                    
+                    # Відображення помилок під кнопкою
+                    if st.session_state.get('last_error'):
+                        st.error(st.session_state.last_error)
             
             elif st.session_state.processing_error:
                 st.error(f"❌ {st.session_state.processing_error}")
         
-        # Отображение результатов генерации
+        # Відображення результатів генерації
         if st.session_state.output_files:
             st.markdown("---")
             st.header("📥 Завантажити результати")
@@ -623,10 +637,10 @@ def main():
                         )
     
     else:
-        # Режим 2: Проверка работ
+        # Режим 2: Перевірка робіт
         st.header("✅ Режим 2: Перевірка робіт")
         
-        # Загрузка файла-ключа
+        # Завантаження файла-ключа
         answer_key_file = st.file_uploader(
             "Оберіть Excel файл-ключ",
             type=["xlsx", "xls"],
@@ -634,7 +648,7 @@ def main():
         )
         
         if answer_key_file is not None:
-            # Сохраняем файл-ключ
+            # Зберігаємо файл-ключ
             temp_dir = ensure_temp_dir()
             key_file_path = os.path.join(temp_dir, answer_key_file.name)
             with open(key_file_path, "wb") as f:
@@ -683,8 +697,12 @@ def main():
                             st.rerun()
                     else:
                         st.error("❌ Введіть відповіді учня")
+                
+                # Відображення помилок під кнопкою
+                if st.session_state.get('last_error'):
+                    st.error(st.session_state.last_error)
         
-        # Отображение результатов проверки
+        # Відображення результатів перевірки
         if hasattr(st.session_state, 'check_result') and st.session_state.check_result:
             st.markdown("---")
             st.header("📊 Результати перевірки")

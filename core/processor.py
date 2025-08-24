@@ -96,164 +96,164 @@ def add_multiline_text(pdf: FPDF, text: str, max_width: float, line_height: floa
 
 def read_test_excel(file_path: str) -> pd.DataFrame:
     """
-    Читает Excel файл с вопросами теста.
+    Читає Excel файл з питаннями тесту.
     
-    Ожидаемая структура:
-    - Строка 1: Инструкции (пропускается)
-    - Столбец 0: Номер вопроса
-    - Столбец 1: Текст вопроса
-    - Столбец 2: Номер правильного ответа (или пустой для нетестовых заданий)
-    - Столбец 3: Вес задания (по умолчанию 1)
-    - Столбцы 4+: Варианты ответов (опционально для нетестовых заданий)
+    Очікувана структура:
+    - Рядок 1: Інструкції (пропускається)
+    - Стовпець 0: Номер питання
+    - Стовпець 1: Текст питання
+    - Стовпець 2: Номер правильної відповіді (або порожній для нетестових завдань)
+    - Стовпець 3: Вага завдання (за замовчуванням 1)
+    - Стовпці 4+: Варіанти відповідей (опціонально для нетестових завдань)
     
     Args:
-        file_path: Путь к Excel файлу
+        file_path: Шлях до Excel файлу
         
     Returns:
-        DataFrame с вопросами теста
+        DataFrame з питаннями тесту
     """
     try:
-        # Читаем Excel файл, пропуская первую строку с инструкциями
+        # Читаємо Excel файл, пропускаючи перший рядок з інструкціями
         df = pd.read_excel(file_path, header=None, skiprows=1)
         
-        # Конвертируем столбцы с номером вопроса и текстом вопроса в строки
-        # Остальные столбцы оставляем как есть для сохранения исходного форматирования
+        # Конвертуємо стовпці з номером питання та текстом питання у рядки
+        # Інші стовпці залишаємо як є для збереження початкового форматування
         df[df.columns[0]] = df[df.columns[0]].astype(str)  # Номер вопроса
         df[df.columns[1]] = df[df.columns[1]].astype(str)  # Текст вопроса
         
         # Проверяем минимальную структуру (номер + вопрос + правильный ответ + вес)
         if df.shape[1] < 4:
-            raise ValueError("Файл должен содержать минимум 4 столбца: номер вопроса, вопрос, правильный ответ/тип, вес задания")
+            raise ValueError("Файл повинен містити мінімум 4 стовпці: номер питання, питання, правильна відповідь/тип, вага завдання")
         
         # Удаляем пустые строки (проверяем наличие номера вопроса и текста вопроса)
         df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0] != 'nan') & 
-               df.iloc[:, 1].notna() & (df.iloc[:, 1] != 'nan')]  # Удаляем строки где нет номера или вопроса
+               df.iloc[:, 1].notna() & (df.iloc[:, 1] != 'nan')]  # Видаляємо рядки де немає номера або питання
         
         if df.empty:
-            raise ValueError("Файл не содержит валидных данных")
+            raise ValueError("Файл не містить валідних даних")
         
-        # Переименовываем столбцы для удобства
+        # Перейменовуємо стовпці для зручності
         columns = ['question_number', 'question', 'correct_answer', 'weight'] + [f'option_{i}' for i in range(1, df.shape[1] - 3)]
         df.columns = columns
         
-        # Обрабатываем вес задания (по умолчанию 1)
+        # Обробляємо вагу завдання (за замовчуванням 1)
         df['weight'] = pd.to_numeric(df['weight'], errors='coerce')
-        df['weight'] = df['weight'].fillna(1.0)  # Заполняем пустые значения единицей
+        df['weight'] = df['weight'].fillna(1.0)  # Заповнюємо порожні значення одиницею
         
-        # Определяем тип задания: тестовое (с вариантами) или открытое (без вариантов)
-        # Подсчитываем количество непустых вариантов ответов для каждого вопроса
+        # Визначаємо тип завдання: тестове (з варіантами) або відкрите (без варіантів)
+        # Підраховуємо кількість непорожніх варіантів відповідей для кожного питання
         option_cols = [col for col in df.columns if col.startswith('option_')]
         df['option_count'] = 0
         for col in option_cols:
             df['option_count'] += df[col].notna() & (df[col] != 'nan') & (df[col].astype(str).str.strip() != '')
         
-        # Проверяем обязательное заполнение правильного ответа
+        # Перевіряємо обов'язкове заповнення правильної відповіді
         missing_answers = df['correct_answer'].isna() | (df['correct_answer'] == 'nan') | (df['correct_answer'].astype(str).str.strip() == '')
         if missing_answers.any():
             missing_questions = df[missing_answers]['question'].tolist()
             log.warning(f"Найдены вопросы без правильного ответа: {missing_questions[:3]}{'...' if len(missing_questions) > 3 else ''}")
-            df = df[~missing_answers]  # Удаляем вопросы без правильного ответа
+            df = df[~missing_answers]  # Видаляємо питання без правильної відповіді
         
-        # Задание считается тестовым если есть 2 или более вариантов ответов
-        # Если 0 или 1 вариант ответа, то это открытое задание
+        # Завдання вважається тестовим якщо є 2 або більше варіантів відповідей
+        # Якщо 0 або 1 варіант відповіді, то це відкрите завдання
         df['is_test_question'] = (df['option_count'] >= 2) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
         
-        # Приводим столбец correct_answer к object типу для избежания предупреждений
+        # Приводимо стовпець correct_answer до object типу для уникнення попереджень
         df['correct_answer'] = df['correct_answer'].astype('object')
         
-        # Для тестовых заданий проверяем правильные ответы
+        # Для тестових завдань перевіряємо правильні відповіді
         test_mask = df['is_test_question']
         if test_mask.any():
-            # Сначала преобразуем в числа для валидации
+            # Спочатку перетворюємо в числа для валідації
             numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
-            # Удаляем тестовые вопросы с некорректными ответами
+            # Видаляємо тестові питання з некоректними відповідями
             valid_test_mask = test_mask & numeric_answers.notna()
             df = df[~(test_mask & numeric_answers.isna())]
             
-            # Форматируем правильные ответы для тестовых заданий (убираем .0 для целых чисел)
+            # Форматуємо правильні відповіді для тестових завдань (прибираємо .0 для цілих чисел)
             for idx in df[valid_test_mask].index:
-                if idx in df.index:  # Проверяем, что индекс еще существует после фильтрации
+                if idx in df.index:  # Перевіряємо, що індекс ще існує після фільтрації
                     answer_value = numeric_answers.loc[idx]
                     if answer_value == int(answer_value):
                         df.at[idx, 'correct_answer'] = str(int(answer_value))
                     else:
                         df.at[idx, 'correct_answer'] = str(answer_value)
         
-        # Для открытых заданий сохраняем правильный ответ как текст
+        # Для відкритих завдань зберігаємо правильну відповідь як текст
         open_mask = ~df['is_test_question'] & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
         if open_mask.any():
-            # Для открытых заданий форматируем ответ правильно
+            # Для відкритих завдань форматуємо відповідь правильно
             for idx in df[open_mask].index:
                 answer_value = df.loc[idx, 'correct_answer']
-                # Если это число, форматируем без лишних .0
+                # Якщо це число, форматуємо без зайвих .0
                 if isinstance(answer_value, (int, float)) and answer_value == int(answer_value):
                     df.at[idx, 'correct_answer'] = str(int(answer_value))
                 else:
                     df.at[idx, 'correct_answer'] = str(answer_value).strip()
         
-        # Удаляем временный столбец
+        # Видаляємо тимчасовий стовпець
         df = df.drop('option_count', axis=1)
         
-        # Приводим столбец correct_answer к строковому типу для совместимости с PyArrow
+        # Приводимо стовпець correct_answer до строкового типу для сумісності з PyArrow
         df['correct_answer'] = df['correct_answer'].astype(str)
         
-        log.info(f"Загружено {len(df)} вопросов из файла {file_path}")
+        log.info(f"Завантажено {len(df)} питань з файлу {file_path}")
         return df
         
     except Exception as e:
-        log.error(f"Ошибка при чтении файла {file_path}: {e}")
+        log.error(f"Помилка при читанні файлу {file_path}: {e}")
         raise
 
 def _process_optional_questions(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Обрабатывает опциональные вопросы (когда номера повторяются).
-    Выбирает по одному случайному вопросу для каждого номера.
+    Обробляє опціональні питання (коли номери повторюються).
+    Вибирає по одному випадковому питанню для кожного номера.
     
     Args:
-        df: DataFrame с вопросами
+        df: DataFrame з питаннями
         
     Returns:
-        DataFrame с выбранными вопросами
+        DataFrame з обраними питаннями
     """
-    # Группируем вопросы по номерам
+    # Групуємо питання за номерами
     question_groups = df.groupby('question_number')
     
     selected_questions = []
     
     for question_num, group in question_groups:
         if len(group) > 1:
-            # Если есть несколько вопросов с одним номером, выбираем случайный
+            # Якщо є кілька питань з одним номером, вибираємо випадковий
             selected_question = group.sample(n=1)
-            log.info(f"Для номера вопроса {question_num} выбран случайный вариант из {len(group)} доступных")
+            log.info(f"Для номера питання {question_num} обрано випадковий варіант з {len(group)} доступних")
         else:
-            # Если вопрос один, просто берем его
+            # Якщо питання одне, просто беремо його
             selected_question = group
         
         selected_questions.append(selected_question)
     
-    # Объединяем выбранные вопросы
+    # Об'єднуємо обрані питання
     result_df = pd.concat(selected_questions, ignore_index=True)
     
-    # Сортируем по номеру вопроса для сохранения порядка
+    # Сортуємо за номером питання для збереження порядку
     result_df = result_df.sort_values('question_number').reset_index(drop=True)
     
-    log.info(f"Обработано {len(df)} вопросов, выбрано {len(result_df)} уникальных")
+    log.info(f"Оброблено {len(df)} питань, обрано {len(result_df)} унікальних")
     return result_df
 
 def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle_mode: str = 'full', answer_shuffle_mode: str = 'random') -> List[Dict[str, Any]]:
     """
-    Генерирует варианты тестов с перемешанными вопросами и ответами.
+    Генерує варіанти тестів з перемішаними питаннями та відповідями.
     
     Args:
-        df: DataFrame с вопросами
-        num_variants: Количество вариантов для генерации
-        question_shuffle_mode: Режим перемешивания вопросов ('full', 'easy_to_hard', 'none')
-        answer_shuffle_mode: Режим перемешивания вариантов ответов ('random', 'none')
+        df: DataFrame з питаннями
+        num_variants: Кількість варіантів для генерації
+        question_shuffle_mode: Режим перемішування питань ('full', 'easy_to_hard', 'none')
+        answer_shuffle_mode: Режим перемішування варіантів відповідей ('random', 'none')
         
     Returns:
-        Список словарей с вариантами тестов
+        Список словників з варіантами тестів
     """
-    # Обрабатываем опциональные вопросы (когда номера повторяются)
+    # Обробляємо опціональні питання (коли номери повторюються)
     processed_df = _process_optional_questions(df)
     
     variants = []
@@ -265,15 +265,15 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
             'answer_key': []
         }
         
-        # Упорядочиваем вопросы в зависимости от выбранного режима
+        # Упорядковуємо питання залежно від обраного режиму
         if question_shuffle_mode == 'full':
-            # Полное перемешивание
+            # Повне перемішування
             shuffled_df = processed_df.sample(frac=1).reset_index(drop=True)
         elif question_shuffle_mode == 'easy_to_hard':
-            # Сортировка от легкого к сложному (по весу)
+            # Сортування від легкого до складного (за вагою)
             shuffled_df = processed_df.sort_values('weight').reset_index(drop=True)
         else:  # question_shuffle_mode == 'none'
-            # Не перемешиваем, оставляем исходный порядок
+            # Не перемішуємо, залишаємо початковий порядок
             shuffled_df = processed_df.reset_index(drop=True)
         
         for idx, row in shuffled_df.iterrows():
@@ -284,14 +284,14 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
             }
             
             if row['is_test_question']:
-                # Тестовое задание с вариантами ответов
+                # Тестове завдання з варіантами відповідей
                 options = []
                 for col in df.columns:
                     if col.startswith('option_') and pd.notna(row[col]) and str(row[col]).strip() != '' and str(row[col]) != 'nan':
-                        # Сохраняем исходное форматирование чисел
+                        # Зберігаємо початкове форматування чисел
                         value = row[col]
                         if isinstance(value, (int, float)):
-                            # Для чисел: целые без .0, дробные как есть
+                            # Для чисел: цілі без .0, дробові як є
                             if isinstance(value, float) and value.is_integer():
                                 options.append(str(int(value)))
                             else:
@@ -300,77 +300,77 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
                             options.append(str(value).strip())
                 
                 if len(options) < 2:
-                    log.warning(f"Тестовый вопрос '{row['question']}' имеет менее 2 вариантов ответов, пропускаем")
+                    log.warning(f"Тестове питання '{row['question']}' має менше 2 варіантів відповідей, пропускаємо")
                     continue
                 
-                # Проверяем корректность индекса правильного ответа
-                correct_answer_idx = int(row['correct_answer']) - 1  # -1 так как нумерация с 1
+                # Перевіряємо коректність індексу правильної відповіді
+                correct_answer_idx = int(row['correct_answer']) - 1  # -1 оскільки нумерація з 1
                 if correct_answer_idx < 0 or correct_answer_idx >= len(options):
-                    log.warning(f"Некорректный индекс правильного ответа {row['correct_answer']} для вопроса '{row['question']}', пропускаем")
+                    log.warning(f"Некоректний індекс правильної відповіді {row['correct_answer']} для питання '{row['question']}', пропускаємо")
                     continue
                 
-                # Находим правильный ответ по индексу
+                # Знаходимо правильну відповідь за індексом
                 correct_option_text = options[correct_answer_idx]
                 
-                # Перемешиваем варианты ответов в зависимости от режима
+                # Перемішуємо варіанти відповідей залежно від режиму
                 if answer_shuffle_mode == 'random':
                     shuffled_options = options.copy()
                     random.shuffle(shuffled_options)
                 else:  # answer_shuffle_mode == 'none'
                     shuffled_options = options.copy()
                 
-                # Находим новую позицию правильного ответа
-                new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерации с 1
+                # Знаходимо нову позицію правильної відповіді
+                new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерації з 1
                 
                 question_data.update({
                     'options': shuffled_options,
                     'correct_answer': new_correct_position
                 })
             else:
-                # Открытое задание (без вариантов ответов)
-                # Обрабатываем правильный ответ как текстовые данные
+                # Відкрите завдання (без варіантів відповідей)
+                # Обробляємо правильну відповідь як текстові дані
                 formatted_answer = str(row['correct_answer']).strip()
                 
                 question_data.update({
                     'correct_answer': formatted_answer,
-                    'options': []  # Открытые вопросы не имеют вариантов ответов
+                    'options': []  # Відкриті питання не мають варіантів відповідей
                 })
             
             variant['questions'].append(question_data)
             
-            # Добавляем в ключ ответов
+            # Додаємо до ключа відповідей
             if row['is_test_question']:
                 variant['answer_key'].append(new_correct_position)
             else:
                 variant['answer_key'].append(formatted_answer)
         
         variants.append(variant)
-        log.info(f"Сгенерирован вариант {variant_num} с {len(variant['questions'])} вопросами")
+        log.info(f"Згенеровано варіант {variant_num} з {len(variant['questions'])} питаннями")
     
     return variants
 
 def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1) -> Tuple[str, str]:
     """
-    Создает PDF файлы с тестами для учеников и ответами для учителя.
+    Створює PDF файли з тестами для учнів та відповідями для вчителя.
     
     Args:
-        variants: Список вариантов тестов
-        output_dir: Папка для сохранения файлов
-        columns: Количество колонок для размещения вопросов (1-3)
+        variants: Список варіантів тестів
+        output_dir: Папка для збереження файлів
+        columns: Кількість колонок для розміщення питань (1-3)
         
     Returns:
-        Кортеж (путь к файлу с тестами, путь к файлу с ответами)
+        Кортеж (шлях до файлу з тестами, шлях до файлу з відповідями)
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     test_pdf_path = os.path.join(output_dir, f"tests_{timestamp}.pdf")
     answers_pdf_path = os.path.join(output_dir, f"answers_{timestamp}.pdf")
     
-    # Создаем PDF с тестами для учеников
+    # Створюємо PDF з тестами для учнів
     test_pdf = FPDF()
     test_pdf.add_font('Arial', '', 'c:/windows/fonts/arial.ttf', uni=True)
     test_pdf.add_font('Arial', 'B', 'c:/windows/fonts/arialbd.ttf', uni=True)
     
-    page_width = test_pdf.w - 2 * test_pdf.l_margin  # Ширина страницы без полей
+    page_width = test_pdf.w - 2 * test_pdf.l_margin  # Ширина сторінки без полів
     
     for variant in variants:
         test_pdf.add_page()
@@ -382,17 +382,17 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
         test_pdf.cell(0, 8, "Інструкція: Оберіть правильну відповідь і впишіть її номер у таблицю внизу.", ln=True)
         test_pdf.ln(5)
         
-        # Добавляем вопросы с поддержкой колонок
-        columns = max(1, min(3, columns))  # Ограничиваем от 1 до 3 колонок
+        # Додаємо питання з підтримкою колонок
+        columns = max(1, min(3, columns))  # Обмежуємо від 1 до 3 колонок
         questions = variant['questions']
         
         if columns == 1:
-            # Одна колонка - простое размещение
+            # Одна колонка - просте розміщення
             for q_idx, question in enumerate(questions):
                 q_num = q_idx + 1
                 
-                # Проверяем место на странице
-                if test_pdf.get_y() > 220:  # Оставляем место для таблицы ответов
+                # Перевіряємо місце на сторінці
+                if test_pdf.get_y() > 220:  # Залишаємо місце для таблиці відповідей
                     test_pdf.add_page()
                     test_pdf.set_font('Arial', 'B', 16)
                     test_pdf.cell(0, 10, f"Тест - Варіант {variant['variant_number']} (продовження)", ln=True, align='C')
@@ -409,10 +409,10 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
                 
                 test_pdf.ln(3)
         else:
-            # Многоколоночное размещение
+            # Багатоколонкове розміщення
             column_width = (page_width - (columns - 1) * 10) / columns
             
-            # Массив для отслеживания Y позиций каждой колонки
+            # Масив для відстеження Y позицій кожної колонки
             column_y_positions = [test_pdf.get_y()] * columns
             start_y = test_pdf.get_y()
             
@@ -421,9 +421,9 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
                 col = q_idx % columns
                 x_pos = test_pdf.l_margin + col * (column_width + 10)
                 
-                # Проверяем место на странице - используем максимальную Y позицию среди всех колонок
+                # Перевіряємо місце на сторінці - використовуємо максимальну Y позицію серед усіх колонок
                 max_y = max(column_y_positions)
-                if max_y > 200:  # Уменьшаем порог для лучшего контроля
+                if max_y > 200:  # Зменшуємо поріг для кращого контролю
                     test_pdf.add_page()
                     test_pdf.set_font('Arial', 'B', 16)
                     test_pdf.cell(0, 10, f"Тест - Варіант {variant['variant_number']} (продовження)", ln=True, align='C')
@@ -431,13 +431,13 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
                     column_y_positions = [test_pdf.get_y()] * columns
                     start_y = test_pdf.get_y()
                 
-                # Устанавливаем позицию для текущей колонки
+                # Встановлюємо позицію для поточної колонки
                 test_pdf.set_xy(x_pos, column_y_positions[col])
                 
                 test_pdf.set_font('Arial', 'B', 10)
                 question_text = f"{q_num}. {question['question_text']}"
                 
-                # Разбиваем текст на строки
+                # Розбиваємо текст на рядки
                 fitted_text, font_size = fit_text_to_width(test_pdf, question_text, column_width, 8)
                 test_pdf.set_font('Arial', 'B', font_size)
                 
@@ -457,43 +457,43 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
                         test_pdf.cell(column_width, 4, opt_line, ln=True)
                         test_pdf.set_x(x_pos)
                 
-                # Обновляем Y позицию для текущей колонки
+                # Оновлюємо Y позицію для поточної колонки
                 column_y_positions[col] = test_pdf.get_y() + 3
             
-            # Устанавливаем позицию после всех колонок
+            # Встановлюємо позицію після всіх колонок
             test_pdf.set_xy(test_pdf.l_margin, max(column_y_positions))
         
-        # Добавляем таблицу для ответов
+        # Додаємо таблицю для відповідей
         test_pdf.ln(8)
         test_pdf.set_font('Arial', 'B', 11)
         test_pdf.cell(0, 6, "Таблиця відповідей:", ln=True)
         test_pdf.ln(3)
         
-        # Создаем компактную таблицу ответов с одинаковыми ячейками
+        # Створюємо компактну таблицю відповідей з однаковими ячейками
         test_pdf.set_font('Arial', '', 9)
-        questions_per_row = 15  # Количество вопросов в строке
+        questions_per_row = 15  # Кількість питань у рядку
         num_questions = len(variant['questions'])
         
-        # Фиксированная ширина ячейки для равномерности
+        # Фіксована ширина ячейки для рівномірності
         fixed_cell_width = page_width / questions_per_row
         
         for row_start in range(0, num_questions, questions_per_row):
             questions_in_row = min(questions_per_row, num_questions - row_start)
             
-            # Номера вопросов - все ячейки одинакового размера
+            # Номери питань - всі ячейки однакового розміру
             test_pdf.set_font('Arial', 'B', 8)
             for i in range(questions_in_row):
                 test_pdf.cell(fixed_cell_width, 6, f"№{row_start + i + 1}", 1, 0, 'C')
-            # Заполняем оставшиеся ячейки пустыми для выравнивания
+            # Заповнюємо решту ячейок порожніми для вирівнювання
             for i in range(questions_in_row, questions_per_row):
                 test_pdf.cell(fixed_cell_width, 6, "", 1, 0, 'C')
             test_pdf.ln()
             
-            # Пустые ячейки для ответов - все одинакового размера
+            # Порожні ячейки для відповідей - всі однакового розміру
             test_pdf.set_font('Arial', '', 8)
             for i in range(questions_in_row):
                 test_pdf.cell(fixed_cell_width, 8, "", 1, 0, 'C')
-            # Заполняем оставшиеся ячейки пустыми для выравнивания
+            # Заповнюємо решту ячейок порожніми для вирівнювання
             for i in range(questions_in_row, questions_per_row):
                 test_pdf.cell(fixed_cell_width, 8, "", 1, 0, 'C')
             test_pdf.ln()
@@ -501,7 +501,7 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     
     test_pdf.output(test_pdf_path)
     
-    # Создаем PDF с ответами для учителя
+    # Створюємо PDF з відповідями для вчителя
     answers_pdf = FPDF()
     answers_pdf.add_font('Arial', '', 'c:/windows/fonts/arial.ttf', uni=True)
     answers_pdf.add_font('Arial', 'B', 'c:/windows/fonts/arialbd.ttf', uni=True)
@@ -513,8 +513,8 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     answers_pdf.cell(0, 10, "Відповіді для вчителя", ln=True, align='C')
     answers_pdf.ln(10)
     
-    # Группируем варианты по больше на страницу
-    variants_per_page = 8  # Увеличиваем количество вариантов на странице
+    # Групуємо варіанти по більше на сторінку
+    variants_per_page = 8  # Збільшуємо кількість варіантів на сторінці
     for page_start in range(0, len(variants), variants_per_page):
         if page_start > 0:
             answers_pdf.add_page()
@@ -525,26 +525,26 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
             add_multiline_text(answers_pdf, variant_text, answer_page_width, 6, 9)
             
             answers_pdf.set_font('Arial', '', 10)
-            # Выводим ответы более компактно
+            # Виводимо відповіді більш компактно
             answer_text = "Відповіді: " + ", ".join([f"{i+1}-{ans}" for i, ans in enumerate(variant['answer_key'])])
             add_multiline_text(answers_pdf, answer_text, answer_page_width, 5, 8)
-            answers_pdf.ln(3)  # Уменьшаем отступ между вариантами
+            answers_pdf.ln(3)  # Зменшуємо відступ між варіантами
     
     answers_pdf.output(answers_pdf_path)
     
-    log.info(f"Созданы PDF файлы: {test_pdf_path}, {answers_pdf_path}")
+    log.info(f"Створено PDF файли: {test_pdf_path}, {answers_pdf_path}")
     return test_pdf_path, answers_pdf_path
 
 def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "") -> str:
     """
-    Создает Excel файл-ключ с ответами для всех вариантов.
+    Створює Excel файл-ключ з відповідями для всіх варіантів.
     
     Args:
-        variants: Список вариантов тестов
-        output_dir: Папка для сохранения файла
+        variants: Список варіантів тестів
+        output_dir: Папка для збереження файлу
         
     Returns:
-        Путь к созданному Excel файлу
+        Шлях до створеного Excel файлу
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     if input_file_name:
@@ -552,12 +552,12 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
     else:
         excel_path = os.path.join(output_dir, f"answer_key_{timestamp}.xlsx")
     
-    # Подготавливаем данные для Excel
+    # Підготовлюємо дані для Excel
     data = []
     for variant in variants:
-        # Создаем строку с ответами через запятую
+        # Створюємо рядок з відповідями через кому
         answers_str = ",".join(map(str, variant['answer_key']))
-        # Создаем строку с весами через запятую
+        # Створюємо рядок з вагами через кому
         weights_str = ",".join(str(q['weight']) for q in variant['questions'])
         data.append({
             'Варіант': variant['variant_number'],
@@ -565,70 +565,70 @@ def create_excel_answer_key(variants: List[Dict[str, Any]], output_dir: str, inp
             'Ваги': weights_str
         })
     
-    # Создаем DataFrame и сохраняем в Excel
+    # Створюємо DataFrame і зберігаємо в Excel
     df = pd.DataFrame(data)
     df.to_excel(excel_path, index=False)
     
-    log.info(f"Создан Excel файл-ключ: {excel_path}")
+    log.info(f"Створено Excel файл-ключ: {excel_path}")
     return excel_path
 
 def check_student_answers(answer_key_file: str, variant_number: int, student_answers: List) -> Dict[str, Any]:
     """
-    Проверяет ответы ученика по файлу-ключу.
+    Перевіряє відповіді учня за файлом-ключем.
     
     Args:
-        answer_key_file: Путь к Excel файлу-ключу
-        variant_number: Номер варианта ученика
-        student_answers: Список ответов ученика (может содержать числа и строки)
+        answer_key_file: Шлях до Excel файлу-ключа
+        variant_number: Номер варіанту учня
+        student_answers: Список відповідей учня (може містити числа та рядки)
         
     Returns:
-        Словарь с результатами проверки
+        Словник з результатами перевірки
     """
     try:
-        # Читаем файл-ключ с ответами
+        # Читаємо файл-ключ з відповідями
         key_df = pd.read_excel(answer_key_file)
         
-        # Находим строку с нужным вариантом
+        # Знаходимо рядок з потрібним варіантом
         variant_row = key_df[key_df['Варіант'] == variant_number]
         if variant_row.empty:
-            raise ValueError(f"Вариант {variant_number} не найден в файле-ключе")
+            raise ValueError(f"Варіант {variant_number} не знайдено у файлі-ключі")
         
-        # Извлекаем ответы и веса
+        # Витягуємо відповіді та ваги
         answers_str = variant_row['Відповіді'].iloc[0]
         weights_str = variant_row['Ваги'].iloc[0]
         
-        # Парсим ответы и веса
+        # Парсимо відповіді та ваги
         answer_key = []
         weights = []
         
         for ans in str(answers_str).split(','):
             ans = ans.strip()
-            # Сохраняем ответы как строки, чтобы сохранить исходный формат
-            # Это позволит различать '3' и '03' для открытых заданий
+            # Зберігаємо відповіді як рядки, щоб зберегти початковий формат
+            # Це дозволить розрізняти '3' і '03' для відкритих завдань
             answer_key.append(ans)
         
         for weight in str(weights_str).split(','):
             weights.append(float(weight.strip()))
         
-        # Проверяем количество ответов
+        # Перевіряємо кількість відповідей
         if len(student_answers) != len(answer_key):
-            raise ValueError(f"Количество ответов ученика ({len(student_answers)}) не совпадает с количеством вопросов ({len(answer_key)})")
+            raise ValueError(f"Кількість відповідей учня ({len(student_answers)}) не збігається з кількістю питань ({len(answer_key)})")
         
-        # Подсчитываем правильные ответы с учетом весов
+        # Підраховуємо правильні відповіді з урахуванням ваг
         total_weight = sum(weights)
-        total_points = 12  # Общее количество баллов за тест
+        total_points = 12  # Загальна кількість балів за тест
         correct_weighted_score = 0
         detailed_results = []
         
         for i, (student_ans, correct_ans, weight) in enumerate(zip(student_answers, answer_key, weights)):
             question_points = (weight / total_weight) * total_points
             
-            # Проверяем правильность ответа
-            # Определяем тип вопроса: если правильный ответ состоит только из цифр, это тестовое задание
+            # Перевіряємо правильність відповіді
+            # Визначаємо тип питання: якщо правильна відповідь складається тільки з цифр, це тестове завдання
             is_test_question = str(correct_ans).strip().isdigit()
             
             if is_test_question:
-                # Тестовое задание - сравниваем числа
+                # Тестове завдання - порівнюємо числа
                 try:
                     student_ans_int = int(student_ans)
                     correct_ans_int = int(correct_ans)
@@ -637,7 +637,7 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                     is_correct = False
                     student_ans_int = student_ans
             else:
-                # Открытое задание - сравниваем строки с нормализацией
+                # Відкрите завдання - порівнюємо рядки з нормалізацією
                 student_str = str(student_ans).strip().lower()
                 correct_str = str(correct_ans).strip().lower()
                 is_correct = student_str == correct_str
@@ -657,7 +657,7 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                 'is_test_question': is_test_question
             })
         
-        # Вычисляем процент
+        # Обчислюємо відсоток
         score_percentage = (correct_weighted_score / total_points) * 100
         correct_count = sum(1 for r in detailed_results if r['is_correct'])
         
@@ -671,35 +671,35 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             'detailed_results': detailed_results
         }
         
-        log.info(f"Проверка завершена для варианта {variant_number}: {correct_count}/{len(answer_key)} ({format_number_with_comma(score_percentage, 1)}%, {format_number_with_comma(correct_weighted_score, 2)}/{total_points} баллов)")
+        log.info(f"Перевірка завершена для варіанта {variant_number}: {correct_count}/{len(answer_key)} ({format_number_with_comma(score_percentage, 1)}%, {format_number_with_comma(correct_weighted_score, 2)}/{total_points} балів)")
         return result
         
     except Exception as e:
-        log.error(f"Ошибка при проверке ответов: {e}")
+        log.error(f"Помилка при перевірці відповідей: {e}")
         raise
 
 def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> str:
     """
-    Создает PDF файл с результатами проверки.
+    Створює PDF файл з результатами перевірки.
     
     Args:
-        check_result: Результаты проверки
-        output_dir: Папка для сохранения файла
+        check_result: Результати перевірки
+        output_dir: Папка для збереження файлу
         
     Returns:
-        Путь к созданному PDF файлу
+        Шлях до створеного PDF файлу
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     
-    # Нормализуем путь и создаем папку
+    # Нормалізуємо шлях і створюємо папку
     try:
         output_dir = os.path.normpath(output_dir)
         os.makedirs(output_dir, exist_ok=True)
     except Exception as e:
-        log.warning(f"Ошибка при работе с папкой {output_dir}: {e}. Используем временную папку.")
+        log.warning(f"Помилка при роботі з папкою {output_dir}: {e}. Використовуємо тимчасову папку.")
         output_dir = ensure_temp_dir("reports_")
     
-    # Формируем имя файла в формате Класс_ПІБ_Вариант_Дата
+    # Формуємо ім'я файлу у форматі Клас_ПІБ_Варіант_Дата
     student_info = check_result.get('student_info', {})
     class_name = student_info.get('class', '').replace(' ', '_').replace('-', '_') or 'БезКласу'
     full_name = student_info.get('full_name', '').replace(' ', '_') or 'БезІмені'
@@ -719,7 +719,7 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     pdf.cell(0, 10, "Результат перевірки тесту", ln=True, align='C')
     pdf.ln(10)
     
-    # Данные ученика (если есть)
+    # Дані учня (якщо є)
     student_info = check_result.get('student_info', {})
     if any(student_info.values()):
         pdf.set_font('Arial', 'B', 12)
@@ -732,9 +732,9 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
             add_multiline_text(pdf, f"ПІБ: {student_info['full_name']}", check_page_width, 6, 10)
         pdf.ln(5)
     
-    # Основная информация
+    # Основна інформація
     pdf.set_font('Arial', 'B', 12)
-    # Используем взвешенные баллы
+    # Використовуємо зважені бали
     weighted_score = check_result.get('weighted_score', 0)
     max_score = check_result.get('max_score', 12)
     info_texts = [
@@ -781,24 +781,24 @@ def create_check_result_pdf(check_result: Dict[str, Any], output_dir: str) -> st
     
     try:
         pdf.output(pdf_path)
-        log.info(f"Создан PDF с результатами проверки: {pdf_path}")
+        log.info(f"Створено PDF з результатами перевірки: {pdf_path}")
         return pdf_path
     except Exception as e:
         # Если ошибка связана с путем, пробуем использовать временную папку
         if 'Invalid argument' in str(e) or 'path' in str(e).lower():
             try:
                 output_dir = ensure_temp_dir("reports_")
-                log.warning(f"Ошибка с путем PDF, используем временную папку: {output_dir}")
+                log.warning(f"Помилка зі шляхом PDF, використовуємо тимчасову папку: {output_dir}")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 pdf_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.pdf")
                 pdf.output(pdf_path)
-                log.info(f"Создан PDF с результатами проверки (fallback): {pdf_path}")
+                log.info(f"Створено PDF з результатами перевірки (fallback): {pdf_path}")
                 return pdf_path
             except Exception as fallback_error:
-                log.error(f"Ошибка при создании PDF отчета (fallback): {fallback_error}")
+                log.error(f"Помилка при створенні PDF звіту (fallback): {fallback_error}")
                 raise
         else:
-            log.error(f"Ошибка при создании PDF отчета: {e}")
+            log.error(f"Помилка при створенні PDF звіту: {e}")
             raise
 
 def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> str:
@@ -930,7 +930,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         doc.add_page_break()
         
         doc.save(word_path)
-        log.info(f"Создан Word документ с результатами проверки: {word_path}")
+        log.info(f"Створено Word документ з результатами перевірки: {word_path}")
         return word_path
         
     except Exception as e:
@@ -938,7 +938,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
         if 'Invalid argument' in str(e) or 'path' in str(e).lower():
             try:
                 output_dir = ensure_temp_dir("reports_")
-                log.warning(f"Ошибка с путем, используем временную папку: {output_dir}")
+                log.warning(f"Помилка зі шляхом, використовуємо тимчасову папку: {output_dir}")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 word_path = os.path.join(output_dir, f"check_result_variant_{check_result['variant_number']}_{timestamp}.docx")
                 
@@ -1025,14 +1025,14 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 doc.add_page_break()
                 
                 doc.save(word_path)
-                log.info(f"Создан Word документ с результатами проверки (fallback): {word_path}")
+                log.info(f"Створено Word документ з результатами перевірки (fallback): {word_path}")
                 return word_path
                 
             except Exception as fallback_error:
-                log.error(f"Ошибка при создании Word отчета (fallback): {fallback_error}")
+                log.error(f"Помилка при створенні Word звіту (fallback): {fallback_error}")
                 raise
         else:
-            log.error(f"Ошибка при создании Word отчета: {e}")
+            log.error(f"Помилка при створенні Word звіту: {e}")
             raise
 
 
@@ -1218,11 +1218,11 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 doc.add_page_break()
         
         doc.save(word_path)
-        log.info(f"Word документ с тестами создан: {word_path}")
+        log.info(f"Word документ з тестами створено: {word_path}")
         return word_path
         
     except Exception as e:
-        log.error(f"Ошибка при создании Word документа: {e}")
+        log.error(f"Помилка при створенні Word документа: {e}")
         raise
 
 
@@ -1278,14 +1278,14 @@ def read_test_word(file_path: str) -> pd.DataFrame:
             })
         
         if not questions_data:
-            raise ValueError("Не удалось найти вопросы в Word документе")
+            raise ValueError("Не вдалося знайти питання в Word документі")
         
         df = pd.DataFrame(questions_data)
-        log.info(f"Из Word документа загружено {len(df)} вопросов")
+        log.info(f"З Word документа завантажено {len(df)} питань")
         return df
         
     except Exception as e:
-        log.error(f"Ошибка при чтении Word документа: {e}")
+        log.error(f"Помилка при читанні Word документа: {e}")
         raise
 
 
@@ -1356,11 +1356,11 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
             doc.add_paragraph()  # Пустая строка между вариантами
         
         doc.save(word_path)
-        log.info(f"Word документ с ответами создан: {word_path}")
+        log.info(f"Word документ з відповідями створено: {word_path}")
         return word_path
         
     except Exception as e:
-        log.error(f"Ошибка при экспорте ответов в Word: {e}")
+        log.error(f"Помилка при експорті відповідей в Word: {e}")
         raise
 
 def generate_test_template(output_dir: str) -> str:
@@ -1411,10 +1411,10 @@ def generate_neural_query_document(output_dir: str) -> str:
         # Создаем документ
         create_neural_query_document(query_doc_path)
         
-        log.info(f"Документ с запросом для нейросети создан: {query_doc_path}")
+        log.info(f"Документ з запитом для нейромережі створено: {query_doc_path}")
         
         return query_doc_path
         
     except Exception as e:
-        log.error(f"Ошибка при создании документа с запросом: {e}")
+        log.error(f"Помилка при створенні документа з запитом: {e}")
         raise
