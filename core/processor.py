@@ -6,11 +6,14 @@ from fpdf import FPDF
 import logging
 from datetime import datetime
 import textwrap
+import re
 from docx import Document
 from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml
+from docx.oxml.shared import qn
 import tempfile
+import math2docx
 from .template_generator import create_test_template
 from .neural_query_generator import create_neural_query_document
 
@@ -18,6 +21,78 @@ def format_number_with_comma(number: float, decimals: int = 1) -> str:
     """Форматирует число с запятой вместо точки как десятичный разделитель"""
     formatted = f"{number:.{decimals}f}"
     return formatted.replace('.', ',')
+
+
+def process_math_formulas(text: str) -> str:
+    """Обробляє математичні формули в тексті та конвертує їх у LaTeX формат
+    
+    Args:
+        text: Текст з математичними формулами
+        
+    Returns:
+        Текст з обробленими формулами у LaTeX форматі
+    """
+    if not text:
+        return text
+    
+    # Паттерни для розпізнавання математичних виразів
+    patterns = [
+        # Дроби: (чисельник)/(знаменник)
+        (r'\(([^)]+)\)/\(([^)]+)\)', r'\\frac{\1}{\2}'),
+        # Прості дроби: число/число або змінна/змінна
+        (r'([a-zA-Z0-9]+)/([a-zA-Z0-9]+)', r'\\frac{\1}{\2}'),
+        # Степені: основа^показник
+        (r'([a-zA-Z0-9]+)\^([a-zA-Z0-9]+)', r'\1^{\2}'),
+        # Степені з дужками: (вираз)^показник
+        (r'\(([^)]+)\)\^([a-zA-Z0-9]+)', r'(\1)^{\2}'),
+        # Корені: sqrt(вираз)
+        (r'sqrt\(([^)]+)\)', r'\\sqrt{\1}'),
+    ]
+    
+    processed_text = text
+    
+    # Застосовуємо паттерни послідовно
+    for pattern, replacement in patterns:
+        processed_text = re.sub(pattern, replacement, processed_text)
+    
+    return processed_text
+
+
+def add_formatted_text_to_paragraph(paragraph, text: str):
+    """Додає текст з математичними формулами до параграфа Word документа
+    
+    Args:
+        paragraph: Параграф Word документа
+        text: Текст з можливими математичними формулами
+    """
+    # Обробляємо текст для виявлення математичних формул
+    processed_text = process_math_formulas(text)
+    
+    # Розділяємо текст на частини: звичайний текст та математичні формули
+    # Паттерн для пошуку LaTeX формул
+    math_pattern = r'(\\frac\{[^}]+\}\{[^}]+\}|[a-zA-Z0-9()]+\^\{[^}]+\}|\\sqrt\{[^}]+\})'
+    
+    # Розділяємо текст на частини
+    parts = re.split(math_pattern, processed_text)
+    
+    for part in parts:
+        if not part:  # Пропускаємо порожні частини
+            continue
+            
+        # Перевіряємо, чи це математична формула
+        if (part.startswith('\\frac{') or 
+            ('^{' in part and any(c.isalnum() for c in part)) or 
+            part.startswith('\\sqrt{')):
+            try:
+                # Створюємо справжню математичну формулу через math2docx
+                math2docx.add_math(paragraph, part)
+            except Exception as e:
+                # Якщо не вдалося створити формулу, додаємо курсивом
+                run = paragraph.add_run(part)
+                run.italic = True
+        else:
+            # Звичайний текст
+            paragraph.add_run(part)
 
 log = logging.getLogger(__name__)
 
@@ -1422,16 +1497,17 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     # Добавляем номер и баллы жирным шрифтом
                     run1 = question_para.add_run(f"{i}. {points_str} ")
                     run1.bold = True
-                    # Добавляем текст вопроса обычным шрифтом
-                    run2 = question_para.add_run(question['question_text'])
+                    # Добавляем текст вопроса с обработкой математических формул
+                    add_formatted_text_to_paragraph(question_para, question['question_text'])
                     question_para.style = 'Normal'
                 else:
                     # В обычном режиме - номер и баллы отдельно от текста вопроса
                     question_header = doc.add_paragraph(f"{i}. {points_str}")
                     question_header.runs[0].bold = True
                     
-                    # Текст вопроса отдельной строкой
-                    question_para = doc.add_paragraph(question['question_text'])
+                    # Текст вопроса отдельной строкой с обработкой математических формул
+                    question_para = doc.add_paragraph()
+                    add_formatted_text_to_paragraph(question_para, question['question_text'])
                     question_para.style = 'Normal'
                 
                 # Варианты ответов в зависимости от типа задания
@@ -1456,14 +1532,18 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         for j, option in enumerate(options):
                             # Форматируем числовые значения правильно
                             formatted_option = format_option_value(option)
-                            cells[j].text = f"{j + 1}) {formatted_option}"
-                            cells[j].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            # Очищаем ячейку и добавляем форматированный текст
+                            cells[j].text = ""
+                            para = cells[j].paragraphs[0]
+                            add_formatted_text_to_paragraph(para, f"{j + 1}) {formatted_option}")
+                            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     else:
                         # Списочный формат - обычные варианты ответов
                         for j, option in enumerate(question['options'], 1):
                             # Форматируем числовые значения правильно
                             formatted_option = format_option_value(option)
-                            option_para = doc.add_paragraph(f"   {j}) {formatted_option}")
+                            option_para = doc.add_paragraph()
+                            add_formatted_text_to_paragraph(option_para, f"   {j}) {formatted_option}")
                             option_para.style = 'Normal'
                 else:
                     # Нетестовое задание - место для ответа

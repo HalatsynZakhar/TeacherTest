@@ -7,3 +7,4 @@ watchdog>=2.1.0
 python-dotenv>=0.20.0
 fpdf2>=2.7.4
 python-docx>=0.8.11
+math2docx
