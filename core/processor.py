@@ -35,25 +35,43 @@ def process_math_formulas(text: str) -> str:
     if not text:
         return text
     
-    # Паттерни для розпізнавання математичних виразів
+    processed_text = text
+    
+    # Спочатку обробляємо спеціальні символи □
+    processed_text = processed_text.replace('□', '')
+    
+    # Паттерни для розпізнавання математичних виразів (в порядку від складних до простих)
     patterns = [
-        # Дроби: (чисельник)/(знаменник)
+        # Складні вкладені дроби: \frac{\frac{a}{b}}{c} або \frac{a}{\frac{b}{c}}
+        (r'\\frac\{\\frac\{([^}]+)\}\{([^}]+)\}\}\{([^}]+)\}', r'\\frac{\\frac{\1}{\2}}{\3}'),
+        (r'\\frac\{([^}]+)\}\{\\frac\{([^}]+)\}\{([^}]+)\}\}', r'\\frac{\1}{\\frac{\2}{\3}}'),
+        
+        # Дроби з дужками: (чисельник)/(знаменник)
         (r'\(([^)]+)\)/\(([^)]+)\)', r'\\frac{\1}{\2}'),
+        
         # Прості дроби: число/число або змінна/змінна
         (r'([a-zA-Z0-9]+)/([a-zA-Z0-9]+)', r'\\frac{\1}{\2}'),
-        # Степені: основа^показник
-        (r'([a-zA-Z0-9]+)\^([a-zA-Z0-9]+)', r'\1^{\2}'),
+        
         # Степені з дужками: (вираз)^показник
         (r'\(([^)]+)\)\^([a-zA-Z0-9]+)', r'(\1)^{\2}'),
+        
+        # Степені: основа^показник
+        (r'([a-zA-Z0-9]+)\^([a-zA-Z0-9]+)', r'\1^{\2}'),
+        
         # Корені: sqrt(вираз)
         (r'sqrt\(([^)]+)\)', r'\\sqrt{\1}'),
     ]
     
-    processed_text = text
-    
     # Застосовуємо паттерни послідовно
     for pattern, replacement in patterns:
         processed_text = re.sub(pattern, replacement, processed_text)
+    
+    # Видаляємо зайві дужки навколо простих виразів
+    # Паттерн для видалення дужок навколо простих дробів
+    processed_text = re.sub(r'\(\\frac\{([^}]+)\}\{([^}]+)\}\)', r'\\frac{\1}{\2}', processed_text)
+    
+    # Видаляємо дужки навколо одиночних змінних або чисел
+    processed_text = re.sub(r'\(([a-zA-Z0-9])\)', r'\1', processed_text)
     
     return processed_text
 
@@ -69,8 +87,8 @@ def add_formatted_text_to_paragraph(paragraph, text: str):
     processed_text = process_math_formulas(text)
     
     # Розділяємо текст на частини: звичайний текст та математичні формули
-    # Паттерн для пошуку LaTeX формул
-    math_pattern = r'(\\frac\{[^}]+\}\{[^}]+\}|[a-zA-Z0-9()]+\^\{[^}]+\}|\\sqrt\{[^}]+\})'
+    # Паттерн для пошуку LaTeX формул (включаючи вкладені дроби)
+    math_pattern = r'(\\frac\{(?:[^{}]|\\frac\{[^}]+\}\{[^}]+\})+\}\{(?:[^{}]|\\frac\{[^}]+\}\{[^}]+\})+\}|[a-zA-Z0-9()]+\^\{[^}]+\}|\\sqrt\{[^}]+\})'
     
     # Розділяємо текст на частини
     parts = re.split(math_pattern, processed_text)
@@ -219,8 +237,40 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Підраховуємо кількість непорожніх варіантів відповідей для кожного питання
         option_cols = [col for col in df.columns if col.startswith('option_')]
         df['option_count'] = 0
-        for col in option_cols:
-            df['option_count'] += df[col].notna() & (df[col] != 'nan') & (df[col].astype(str).str.strip() != '')
+        df['has_gaps'] = False
+        
+        # Перевіряємо послідовність варіантів відповідей для кожного рядка
+        for idx in df.index:
+            consecutive_count = 0
+            has_gap = False
+            found_empty = False
+            
+            for col in option_cols:
+                cell_value = df.loc[idx, col]
+                is_empty = pd.isna(cell_value) or cell_value == 'nan' or str(cell_value).strip() == ''
+                
+                if not is_empty:
+                    if found_empty:  # Знайшли заповнений варіант після порожнього
+                        has_gap = True
+                        break
+                    consecutive_count += 1
+                else:
+                    found_empty = True
+            
+            df.at[idx, 'option_count'] = consecutive_count
+            df.at[idx, 'has_gaps'] = has_gap
+        
+        # Перевіряємо наявність пропусків у варіантах відповідей
+        gaps_mask = df['has_gaps'] & (df['option_count'] >= 1)
+        if gaps_mask.any():
+            gap_questions = df[gaps_mask][['question_number', 'question']].values.tolist()
+            error_details = []
+            for q_num, q_text in gap_questions[:5]:  # Показуємо перші 5 помилок
+                error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
+            error_msg = f"Знайдено питання з пропусками у варіантах відповідей. Варіанти повинні йти підряд без пропусків:\n" + "\n".join(error_details)
+            if len(gap_questions) > 5:
+                error_msg += f"\n... та ще {len(gap_questions) - 5} питань"
+            raise ValueError(error_msg)
         
         # Перевіряємо обов'язкове заповнення правильної відповіді
         missing_answers = df['correct_answer'].isna() | (df['correct_answer'] == 'nan') | (df['correct_answer'].astype(str).str.strip() == '')
@@ -1142,7 +1192,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             if question_text:
                 question_para = doc.add_paragraph()
                 question_para.add_run('Текст питання: ').bold = True
-                question_para.add_run(question_text)
+                add_formatted_text_to_paragraph(question_para, question_text)
             
 
             
@@ -1197,25 +1247,29 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     formatted_option = format_option_value(option)
                     
                     option_para = doc.add_paragraph()
-                    option_text = f'{j}. {formatted_option}'
+                    option_text_base = f'{j}. {formatted_option}'
+                    
+                    # Добавляем базовый текст с математическими формулами
+                    add_formatted_text_to_paragraph(option_para, option_text_base)
                     
                     # Добавляем информацию о выборе ученика и правильном ответе
+                    status_text = ''
+                    status_color = None
                     if j == student_answer_num and j == correct_answer_num:
-                        option_text += ' (Учень обрав - ПРАВИЛЬНО)'
+                        status_text = ' (Учень обрав - ПРАВИЛЬНО)'
+                        status_color = RGBColor(0, 128, 0)  # Зеленый
                     elif j == student_answer_num:
-                        option_text += ' (Учень обрав - НЕПРАВИЛЬНО)'
+                        status_text = ' (Учень обрав - НЕПРАВИЛЬНО)'
+                        status_color = RGBColor(255, 0, 0)  # Красный
                     elif j == correct_answer_num:
-                        option_text += ' (Правильна відповідь)'
+                        status_text = ' (Правильна відповідь)'
+                        status_color = RGBColor(0, 128, 0)  # Зеленый
                     
-                    option_run = option_para.add_run(option_text)
-                    
-                    # Цветовое выделение
-                    if j == correct_answer_num:
-                        option_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый для правильного
-                        option_run.bold = True
-                    elif j == student_answer_num:
-                        option_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный для неправильного выбора ученика
-                        option_run.bold = True
+                    if status_text:
+                        status_run = option_para.add_run(status_text)
+                        if status_color:
+                            status_run.font.color.rgb = status_color
+                            status_run.bold = True
             
             # Для відкритих питань додаємо інформацію про відповіді
             if not result.get('is_test_question'):
