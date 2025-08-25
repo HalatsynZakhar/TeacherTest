@@ -244,10 +244,14 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
             consecutive_count = 0
             has_gap = False
             found_empty = False
+            has_first_option = False
             
-            for col in option_cols:
+            for i, col in enumerate(option_cols):
                 cell_value = df.loc[idx, col]
                 is_empty = pd.isna(cell_value) or cell_value == 'nan' or str(cell_value).strip() == ''
+                
+                if i == 0:  # Перший варіант
+                    has_first_option = not is_empty
                 
                 if not is_empty:
                     if found_empty:  # Знайшли заповнений варіант після порожнього
@@ -257,17 +261,22 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
                 else:
                     found_empty = True
             
+            # Якщо є будь-які варіанти відповідей, але перший порожній - це помилка
+            has_any_options = any(not (pd.isna(df.loc[idx, col]) or df.loc[idx, col] == 'nan' or str(df.loc[idx, col]).strip() == '') for col in option_cols)
+            if has_any_options and not has_first_option:
+                has_gap = True
+            
             df.at[idx, 'option_count'] = consecutive_count
             df.at[idx, 'has_gaps'] = has_gap
         
         # Перевіряємо наявність пропусків у варіантах відповідей
-        gaps_mask = df['has_gaps'] & (df['option_count'] >= 1)
+        gaps_mask = df['has_gaps']
         if gaps_mask.any():
             gap_questions = df[gaps_mask][['question_number', 'question']].values.tolist()
             error_details = []
             for q_num, q_text in gap_questions[:5]:  # Показуємо перші 5 помилок
                 error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
-            error_msg = f"Знайдено питання з пропусками у варіантах відповідей. Варіанти повинні йти підряд без пропусків:\n" + "\n".join(error_details)
+            error_msg = f"Знайдено питання з пропусками у варіантах відповідей. Варіанти повинні йти підряд без пропусків, починаючи з першого варіанту:\n" + "\n".join(error_details)
             if len(gap_questions) > 5:
                 error_msg += f"\n... та ще {len(gap_questions) - 5} питань"
             raise ValueError(error_msg)
@@ -279,8 +288,20 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
             log.warning(f"Найдены вопросы без правильного ответа: {missing_questions[:3]}{'...' if len(missing_questions) > 3 else ''}")
             df = df[~missing_answers]  # Видаляємо питання без правильної відповіді
         
+        # Перевіряємо питання з одним варіантом відповіді - це помилка
+        single_option_mask = (df['option_count'] == 1)
+        if single_option_mask.any():
+            single_option_questions = df[single_option_mask][['question_number', 'question']].values.tolist()
+            error_details = []
+            for q_num, q_text in single_option_questions[:5]:  # Показуємо перші 5 помилок
+                error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
+            error_msg = f"Знайдено питання з одним варіантом відповіді. Для тестових питань має бути мінімум два варіанти, для відкритих питань варіанти взагалі не потрібні:\n" + "\n".join(error_details)
+            if len(single_option_questions) > 5:
+                error_msg += f"\n... та ще {len(single_option_questions) - 5} питань"
+            raise ValueError(error_msg)
+        
         # Завдання вважається тестовим якщо є 2 або більше варіантів відповідей
-        # Якщо 0 або 1 варіант відповіді, то це відкрите завдання
+        # Якщо 0 варіантів відповіді, то це відкрите завдання
         df['is_test_question'] = (df['option_count'] >= 2) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
         
         # Приводимо стовпець correct_answer до object типу для уникнення попереджень
