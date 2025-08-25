@@ -1907,10 +1907,10 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
                 row_cells[0].text = str(i)
                 row_cells[1].text = str(answer)
             
-            # Также добавляем ответы в строку для удобства
+            # Також добавляємо ответы в строку для удобства
             answers_line = doc.add_paragraph()
             answers_line.add_run('Відповіді в рядок: ').bold = True
-            answers_line.add_run(', '.join([f"{i+1}-{ans}" for i, ans in enumerate(variant['answer_key'])]))
+            answers_line.add_run(', '.join([str(ans) for ans in variant['answer_key']]))
             
             doc.add_paragraph()  # Пустая строка между вариантами
         
