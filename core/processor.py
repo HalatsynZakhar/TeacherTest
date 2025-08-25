@@ -1277,10 +1277,10 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     status_text = ''
                     status_color = None
                     if j == student_answer_num and j == correct_answer_num:
-                        status_text = ' (Учень обрав - ПРАВИЛЬНО)'
+                        status_text = ' (Учень відповів - ПРАВИЛЬНО)'
                         status_color = RGBColor(0, 128, 0)  # Зеленый
                     elif j == student_answer_num:
-                        status_text = ' (Учень обрав - НЕПРАВИЛЬНО)'
+                        status_text = ' (Учень відповів - НЕПРАВИЛЬНО)'
                         status_color = RGBColor(255, 0, 0)  # Красный
                     elif j == correct_answer_num:
                         status_text = ' (Правильна відповідь)'
@@ -1326,7 +1326,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 formatted_correct = format_answer_value(correct_answer)
                 
                 answers_para.add_run('Відповіді: ').bold = True
-                answers_para.add_run('Учень обрав: ')
+                answers_para.add_run('Учень відповів: ')
                 
                 student_run = answers_para.add_run(f'({formatted_student})')
                 if result['is_correct']:
