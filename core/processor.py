@@ -1836,6 +1836,11 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         for col_idx, col in enumerate(table.columns):
                             col.width = Inches(6.5 / num_options)  # Равномерно распределяем по ширине
                         
+                        # Додаємо світло-сіру рамку до таблиці
+                        for row in table.rows:
+                            for cell in row.cells:
+                                cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:left w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:right w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/></w:tcBorders>'))
+                        
                         # Заполняем ячейки вариантами ответов
                         cells = table.rows[0].cells
                         # Українські літери без Ґ, Є, І, Ї, Й, Ь
