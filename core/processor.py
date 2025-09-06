@@ -786,9 +786,6 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     answer_page_width = answers_pdf.w - 2 * answers_pdf.l_margin
     
     answers_pdf.add_page()
-    answers_pdf.set_font('Arial', 'B', 16)
-    answers_pdf.cell(0, 10, "Відповіді для вчителя", ln=True, align='C')
-    answers_pdf.ln(10)
     
     # Групуємо варіанти по більше на сторінку
     variants_per_page = 8  # Збільшуємо кількість варіантів на сторінці
@@ -797,15 +794,15 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
             answers_pdf.add_page()
         
         for variant in variants[page_start:page_start + variants_per_page]:
-            answers_pdf.set_font('Arial', 'B', 12)
+            answers_pdf.set_font('Arial', 'B', 10)
             variant_text = f"Варіант {variant['variant_number']}"
-            add_multiline_text(answers_pdf, variant_text, answer_page_width, 6, 9)
+            add_multiline_text(answers_pdf, variant_text, answer_page_width, 4, 6)
             
-            answers_pdf.set_font('Arial', '', 10)
+            answers_pdf.set_font('Arial', '', 9)
             # Виводимо відповіді більш компактно
-            answer_text = "Відповіді: " + ", ".join([f"{i+1}-{ans}" for i, ans in enumerate(variant['answer_key'])])
-            add_multiline_text(answers_pdf, answer_text, answer_page_width, 5, 8)
-            answers_pdf.ln(3)  # Зменшуємо відступ між варіантами
+            answer_text = ", ".join([f"{i+1}-{ans}" for i, ans in enumerate(variant['answer_key'])])
+            add_multiline_text(answers_pdf, answer_text, answer_page_width, 3, 5)
+            answers_pdf.ln(1)  # Мінімальний відступ між варіантами
     
     answers_pdf.output(answers_pdf_path)
     
@@ -2075,24 +2072,7 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         section.left_margin = Inches(0.5)    # 1.27 см
         section.right_margin = Inches(0.5)   # 1.27 см
         
-        # Заголовок
-        title_parts = ["Відповіді до тестів"]
-        if test_class:
-            title_parts.append(f"Клас: {test_class}")
-        if test_date:
-            title_parts.append(f"Дата: {test_date}")
-        
-        heading = doc.add_heading(" - ".join(title_parts), level=1)
-        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Инструкция
-        instruction = doc.add_paragraph(
-            "Цей документ містить правильні відповіді для всіх варіантів тестів. "
-            "Використовуйте його для перевірки робіт учнів."
-        )
-        instruction.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        
-        doc.add_paragraph()  # Пустая строка
+        # Видаляємо заголовок та інструкцію для компактності
         
         # Ответы для каждого варианта
         for variant in variants:
@@ -2121,12 +2101,24 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
                 row_cells[0].text = str(i)
                 row_cells[1].text = str(answer)
             
+            # Додаємо сірі рамки D3D3D3 до всіх клітинок таблиці
+            for row in table.rows:
+                for cell in row.cells:
+                    tcPr = cell._tc.get_or_add_tcPr()
+                    tcBorders = parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>')
+                    tcPr.append(tcBorders)
+            
             # Також добавляємо ответы в строку для удобства
             answers_line = doc.add_paragraph()
             answers_line.add_run('Відповіді в рядок: ').bold = True
             answers_line.add_run(', '.join([str(ans) for ans in variant['answer_key']]))
             
-            doc.add_paragraph()  # Пустая строка между вариантами
+            # Мінімальний відступ між варіантами
+            if variant != variants[-1]:  # Не додаємо відступ після останнього варіанту
+                spacing_para = doc.add_paragraph()
+                spacing_para.paragraph_format.space_before = 0
+                spacing_para.paragraph_format.space_after = 0
+                spacing_para.paragraph_format.line_spacing = 0.5
         
         doc.save(word_path)
         log.info(f"Word документ з відповідями створено: {word_path}")
