@@ -743,6 +743,8 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
         
         # Створюємо компактну таблицю відповідей з однаковими ячейками
         test_pdf.set_font('Arial', '', 9)
+        # Встановлюємо сірий колір для рамок D3D3D3 (RGB: 211, 211, 211)
+        test_pdf.set_draw_color(211, 211, 211)
         questions_per_row = 15  # Кількість питань у рядку
         num_questions = len(variant['questions'])
         
@@ -777,6 +779,9 @@ def create_test_pdf(variants: List[Dict[str, Any]], output_dir: str, columns: in
     answers_pdf = FPDF()
     answers_pdf.add_font('Arial', '', 'c:/windows/fonts/arial.ttf', uni=True)
     answers_pdf.add_font('Arial', 'B', 'c:/windows/fonts/arialbd.ttf', uni=True)
+    
+    # Встановлюємо сірий колір для рамок D3D3D3 (RGB: 211, 211, 211)
+    answers_pdf.set_draw_color(211, 211, 211)
     
     answer_page_width = answers_pdf.w - 2 * answers_pdf.l_margin
     
@@ -1314,6 +1319,11 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             else:
                 run = result_paragraph.add_run("✗ Неправильно")
                 run.font.color.rgb = RGBColor(255, 0, 0)  # Красный цвет
+        
+        # Добавляем серые рамки D3D3D3 ко всем ячейкам таблицы
+        for row in table.rows:
+            for cell in row.cells:
+                cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>'))
         
         # Добавляем детальный анализ с полным текстом вопросов
         doc.add_page_break()
@@ -1887,6 +1897,11 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             answers_paragraph = doc.add_paragraph()
             answers_run = answers_paragraph.add_run("Відповіді:")
             answers_run.bold = True
+            # Мінімальні відступи для заголовка відповідей в режимі економії місця
+            if space_optimization:
+                answers_paragraph.paragraph_format.space_before = Inches(0.02)
+                answers_paragraph.paragraph_format.space_after = Inches(0.01)
+                answers_paragraph.paragraph_format.line_spacing = 1.0
             
             total_questions = len(variant['questions'])
             questions_per_row = 6  # По 6 завдань у рядку
@@ -1909,6 +1924,11 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 # Додаємо параграф з рядком відповідей
                 answer_para = doc.add_paragraph(row_text.rstrip())
                 answer_para.style = 'Normal'
+                # Мінімальні відступи для рядків відповідей в режимі економії місця
+                if space_optimization:
+                    answer_para.paragraph_format.space_before = Inches(0)
+                    answer_para.paragraph_format.space_after = Inches(0.01)
+                    answer_para.paragraph_format.line_spacing = 1.0
                 
             
             # Разрыв страницы между вариантами (кроме последнего)
