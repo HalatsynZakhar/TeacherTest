@@ -214,9 +214,9 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         df[df.columns[0]] = df[df.columns[0]].astype(str)  # Номер вопроса
         df[df.columns[1]] = df[df.columns[1]].astype(str)  # Текст вопроса
         
-        # Проверяем минимальную структуру (номер + вопрос + правильный ответ + вес)
-        if df.shape[1] < 4:
-            raise ValueError("Файл повинен містити мінімум 4 стовпці: номер питання, питання, правильна відповідь/тип, вага завдання")
+        # Проверяем минимальную структуру (номер + вопрос + правильный ответ + вес + варианты + тип)
+        if df.shape[1] < 6:
+            raise ValueError("Файл повинен містити мінімум 6 стовпців: номер питання, питання, правильна відповідь, вага завдання, варіант А, тип завдання")
         
         # Удаляем пустые строки (проверяем наличие номера вопроса и текста вопроса)
         df = df[df.iloc[:, 0].notna() & (df.iloc[:, 0] != 'nan') & 
@@ -225,26 +225,49 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         if df.empty:
             raise ValueError("Файл не містить валідних даних")
         
-        # Перейменовуємо стовпці для зручності
-        columns = ['question_number', 'question', 'correct_answer', 'weight'] + [f'option_{i}' for i in range(1, df.shape[1] - 3)]
+        # Перейменовуємо стовпці для зручності - адаптуємося до фактичної кількості колонок
+        base_columns = ['question_number', 'question', 'correct_answer', 'weight']
+        # Варіанти відповідей: загальна кількість колонок мінус базові колонки (4) мінус тип завдання (1)
+        option_columns = [f'option_{i+1}' for i in range(max(0, df.shape[1] - 5))]  # Варіанти відповідей
+        task_type_column = ['task_type']
+        
+        columns = base_columns + option_columns + task_type_column
+        
+        # Обрізаємо список колонок до фактичної кількості
+        columns = columns[:df.shape[1]]
         df.columns = columns
+        
+        # Додаємо відсутні колонки якщо потрібно
+        required_columns = ['question_number', 'question', 'correct_answer', 'weight', 'option_1', 'option_2', 'option_3', 'option_4', 'task_type']
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = '' if col != 'weight' else 1.0
         
         # Обробляємо вагу завдання (за замовчуванням 1)
         df['weight'] = pd.to_numeric(df['weight'], errors='coerce')
         df['weight'] = df['weight'].fillna(1.0)  # Заповнюємо порожні значення одиницею
         
-        # Визначаємо тип завдання: тестове (з варіантами) або відкрите (без варіантів)
+        # Визначаємо тип завдання на основі колонки task_type
+        df['task_type'] = df['task_type'].astype(str).str.strip()
+        
         # Підраховуємо кількість непорожніх варіантів відповідей для кожного питання
-        option_cols = [col for col in df.columns if col.startswith('option_')]
+        option_cols = ['option_1', 'option_2', 'option_3', 'option_4']
         df['option_count'] = 0
         df['has_gaps'] = False
         
         # Перевіряємо послідовність варіантів відповідей для кожного рядка
         for idx in df.index:
+            task_type = df.loc[idx, 'task_type']
             consecutive_count = 0
             has_gap = False
             found_empty = False
             has_first_option = False
+            
+            # Для відкритих питань варіанти не потрібні
+            if task_type.lower() in ['відкрите', 'відкрите питання', 'вп']:
+                df.at[idx, 'option_count'] = 0
+                df.at[idx, 'has_gaps'] = False
+                continue
             
             for i, col in enumerate(option_cols):
                 cell_value = df.loc[idx, col]
@@ -269,14 +292,15 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
             df.at[idx, 'option_count'] = consecutive_count
             df.at[idx, 'has_gaps'] = has_gap
         
-        # Перевіряємо наявність пропусків у варіантах відповідей
-        gaps_mask = df['has_gaps']
+        # Перевіряємо наявність пропусків у варіантах відповідей для тестових питань
+        test_questions_mask = ~df['task_type'].str.lower().isin(['відкрите', 'відкрите питання', 'вп'])
+        gaps_mask = df['has_gaps'] & test_questions_mask
         if gaps_mask.any():
             gap_questions = df[gaps_mask][['question_number', 'question']].values.tolist()
             error_details = []
             for q_num, q_text in gap_questions[:5]:  # Показуємо перші 5 помилок
                 error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
-            error_msg = f"Знайдено питання з пропусками у варіантах відповідей. Варіанти повинні йти підряд без пропусків, починаючи з першого варіанту:\n" + "\n".join(error_details)
+            error_msg = f"Знайдено тестові питання з пропусками у варіантах відповідей. Варіанти повинні йти підряд без пропусків, починаючи з першого варіанту:\n" + "\n".join(error_details)
             if len(gap_questions) > 5:
                 error_msg += f"\n... та ще {len(gap_questions) - 5} питань"
             raise ValueError(error_msg)
@@ -288,21 +312,22 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
             log.warning(f"Найдены вопросы без правильного ответа: {missing_questions[:3]}{'...' if len(missing_questions) > 3 else ''}")
             df = df[~missing_answers]  # Видаляємо питання без правильної відповіді
         
-        # Перевіряємо питання з одним варіантом відповіді - це помилка
-        single_option_mask = (df['option_count'] == 1)
+        # Перевіряємо тестові питання з недостатньою кількістю варіантів відповіді
+        test_questions_mask = ~df['task_type'].str.lower().isin(['відкрите', 'відкрите питання', 'вп'])
+        single_option_mask = (df['option_count'] == 1) & test_questions_mask
         if single_option_mask.any():
             single_option_questions = df[single_option_mask][['question_number', 'question']].values.tolist()
             error_details = []
             for q_num, q_text in single_option_questions[:5]:  # Показуємо перші 5 помилок
                 error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
-            error_msg = f"Знайдено питання з одним варіантом відповіді. Для тестових питань має бути мінімум два варіанти, для відкритих питань варіанти взагалі не потрібні:\n" + "\n".join(error_details)
+            error_msg = f"Знайдено тестові питання з одним варіантом відповіді. Для тестових питань має бути мінімум два варіанти:\n" + "\n".join(error_details)
             if len(single_option_questions) > 5:
                 error_msg += f"\n... та ще {len(single_option_questions) - 5} питань"
             raise ValueError(error_msg)
         
-        # Завдання вважається тестовим якщо є 2 або більше варіантів відповідей
-        # Якщо 0 варіантів відповіді, то це відкрите завдання
-        df['is_test_question'] = (df['option_count'] >= 2) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        # Визначаємо тип завдання на основі колонки task_type
+        df['is_test_question'] = ~df['task_type'].str.lower().isin(['відкрите', 'відкрите питання', 'вп']) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
+        df['is_multiple_choice'] = df['task_type'].str.lower().isin(['тест м', 'тестове з декількома варіантами відповіді', 'тестове завдання з декількома варіантами відповіді', 'тк'])
         
         # Приводимо стовпець correct_answer до object типу для уникнення попереджень
         df['correct_answer'] = df['correct_answer'].astype('object')
@@ -310,38 +335,37 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Для тестових завдань перевіряємо правильні відповіді
         test_mask = df['is_test_question']
         if test_mask.any():
-            # Спочатку перетворюємо в числа для валідації
-            numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
+            # Українські літери (без Ґ, Є, І, Ї, Й, Ь)
+            ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
             
-            # Перевіряємо чи правильна відповідь є числом
-            invalid_numeric_mask = test_mask & numeric_answers.isna()
-            if invalid_numeric_mask.any():
-                invalid_questions = df[invalid_numeric_mask][['question_number', 'question', 'correct_answer']].values.tolist()
-                error_details = []
-                for q_num, q_text, answer in invalid_questions[:5]:  # Показуємо перші 5 помилок
-                    error_details.append(f"Питання {q_num}: '{q_text[:50]}...' - некоректна відповідь '{answer}'")
-                error_msg = f"Знайдено тестові завдання з некоректними відповідями (повинні бути числами):\n" + "\n".join(error_details)
-                if len(invalid_questions) > 5:
-                    error_msg += f"\n... та ще {len(invalid_questions) - 5} питань"
-                raise ValueError(error_msg)
-            
-            # Перевіряємо чи правильна відповідь існує серед варіантів
+            # Перевіряємо правильні відповіді для тестових завдань
             for idx in df[test_mask].index:
-                answer_num = int(numeric_answers.loc[idx])
+                answer_str = str(df.loc[idx, 'correct_answer']).strip().upper()
                 option_count = df.loc[idx, 'option_count']
+                q_num = df.loc[idx, 'question_number']
+                q_text = df.loc[idx, 'question']
                 
-                if answer_num < 1 or answer_num > option_count:
-                    q_num = df.loc[idx, 'question_number']
-                    q_text = df.loc[idx, 'question']
-                    raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - правильна відповідь {answer_num} не існує серед варіантів (доступно варіантів: {option_count})")
-            
-            # Форматуємо правильні відповіді для тестових завдань (прибираємо .0 для цілих чисел)
-            for idx in df[test_mask].index:
-                answer_value = numeric_answers.loc[idx]
-                if answer_value == int(answer_value):
-                    df.at[idx, 'correct_answer'] = str(int(answer_value))
-                else:
-                    df.at[idx, 'correct_answer'] = str(answer_value)
+                # Перетворюємо числові індекси в українські літери
+                converted_answer = ""
+                for char in answer_str:
+                    if char.isdigit():
+                        # Перетворюємо число в українську літеру
+                        digit_idx = int(char) - 1  # -1 оскільки нумерація з 1
+                        if 0 <= digit_idx < len(ukrainian_letters):
+                            converted_answer += ukrainian_letters[digit_idx]
+                        else:
+                            raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - некоректний індекс '{char}' в відповіді '{answer_str}'. Доступні індекси: 1-{len(ukrainian_letters)}")
+                    elif char in ukrainian_letters:
+                        converted_answer += char
+                    else:
+                        raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - некоректний символ '{char}' в відповіді '{answer_str}'. Доступні літери: {', '.join(ukrainian_letters)} або числа 1-{len(ukrainian_letters)}")
+                
+                # Перевіряємо чи відповідь не пуста
+                if not converted_answer:
+                    raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - порожня відповідь")
+                
+                # Зберігаємо перетворену відповідь
+                df.at[idx, 'correct_answer'] = converted_answer
         
         # Для відкритих завдань зберігаємо правильну відповідь як текст
         open_mask = ~df['is_test_question'] & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
@@ -472,14 +496,34 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
                     log.warning(f"Тестове питання '{row['question']}' має менше 2 варіантів відповідей, пропускаємо")
                     continue
                 
-                # Перевіряємо коректність індексу правильної відповіді
-                correct_answer_idx = int(row['correct_answer']) - 1  # -1 оскільки нумерація з 1
-                if correct_answer_idx < 0 or correct_answer_idx >= len(options):
-                    log.warning(f"Некоректний індекс правильної відповіді {row['correct_answer']} для питання '{row['question']}', пропускаємо")
-                    continue
+                # Перевіряємо коректність правильної відповіді
+                correct_answer_str = str(row['correct_answer']).strip().upper()
                 
-                # Знаходимо правильну відповідь за індексом
-                correct_option_text = options[correct_answer_idx]
+                # Обробляємо множинні відповіді (наприклад, АВ, БГ, АВДЖИ)
+                ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                correct_answer_indices = []
+                correct_option_texts = []
+                
+                # Перевіряємо кожну літеру в відповіді
+                for letter in correct_answer_str:
+                    if letter in ukrainian_letters[:len(options)]:
+                        idx = ukrainian_letters.index(letter)
+                        if idx < len(options):
+                            correct_answer_indices.append(idx)
+                            correct_option_texts.append(options[idx])
+                    else:
+                        # Спробуємо як число
+                        try:
+                            idx = int(letter) - 1
+                            if 0 <= idx < len(options):
+                                correct_answer_indices.append(idx)
+                                correct_option_texts.append(options[idx])
+                        except ValueError:
+                            pass
+                
+                if not correct_answer_indices:
+                    log.warning(f"Некоректна правильна відповідь '{row['correct_answer']}' для питання '{row['question']}', пропускаємо")
+                    continue
                 
                 # Перемішуємо варіанти відповідей залежно від режиму
                 if answer_shuffle_mode == 'random':
@@ -488,12 +532,19 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
                 else:  # answer_shuffle_mode == 'none'
                     shuffled_options = options.copy()
                 
-                # Знаходимо нову позицію правильної відповіді
-                new_correct_position = shuffled_options.index(correct_option_text) + 1  # +1 для нумерації з 1
+                # Знаходимо нові позиції правильних відповідей після перемішування
+                new_correct_letters = []
+                for correct_text in correct_option_texts:
+                    new_position_idx = shuffled_options.index(correct_text)
+                    new_correct_letter = ukrainian_letters[new_position_idx] if new_position_idx < len(ukrainian_letters) else str(new_position_idx + 1)
+                    new_correct_letters.append(new_correct_letter)
+                
+                # Об'єднуємо літери в одну відповідь
+                combined_correct_answer = ''.join(sorted(new_correct_letters))
                 
                 question_data.update({
                     'options': shuffled_options,
-                    'correct_answer': new_correct_position
+                    'correct_answer': combined_correct_answer
                 })
             else:
                 # Відкрите завдання (без варіантів відповідей)
@@ -509,7 +560,7 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
             
             # Додаємо до ключа відповідей
             if row['is_test_question']:
-                variant['answer_key'].append(new_correct_position)
+                variant['answer_key'].append(combined_correct_answer)
             else:
                 variant['answer_key'].append(formatted_answer)
         
@@ -866,33 +917,45 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
             is_test_question = len(question_options) > 0
             
             if is_test_question:
-                # Тестове завдання - порівнюємо числа
+                # Тестове завдання - порівнюємо літери
                 # Перевіряємо чи відповідь не порожня
                 if not student_ans or str(student_ans).strip() == "":
                     # Для тестових питань порожня відповідь вважається неправильною
                     is_correct = False
                     student_ans_int = "(не заповнено)"
                 else:
-                    try:
-                        student_ans_int = int(student_ans)
-                        correct_ans_int = int(correct_ans)
+                    # Українські літери для варіантів відповідей (без Ґ, Є, І, Ї, Й, Ь)
+                    ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                    
+                    # Нормалізуємо відповіді учня та правильну відповідь
+                    student_ans_normalized = str(student_ans).strip().upper()
+                    correct_ans_normalized = str(correct_ans).strip().upper()
+                    
+                    num_options = len(question_options)
+                    # Використовуємо всі доступні українські літери для валідації
+                    valid_letters = ukrainian_letters
+                    
+                    # Перевіряємо множинний вибір (кілька літер)
+                    if len(student_ans_normalized) > 1:
+                        # Множинний вибір - перевіряємо всі літери
+                        student_letters = list(student_ans_normalized)
+                        correct_letters = list(correct_ans_normalized)
                         
-                        # Перевіряємо, що відповідь учня знаходиться в допустимому діапазоні
-                        num_options = len(question_options)
-                        if student_ans_int < 1 or student_ans_int > num_options:
-                            # Спеціальне повідомлення для 0
-                            if student_ans_int == 0:
-                                raise ValueError(f"Питання {i+1}: значення '0' є числом, але не підходить для тестових питань. Введіть число від 1 до {num_options}")
-                            else:
-                                raise ValueError(f"Питання {i+1}: значення '{student_ans}' не підходить. Введіть число від 1 до {num_options}")
-                        else:
-                            is_correct = student_ans_int == correct_ans_int
-                    except (ValueError, TypeError) as e:
-                        # Якщо це вже наше повідомлення про помилку, передаємо його далі
-                        if "Питання" in str(e):
-                            raise e
-                        # Інакше створюємо нове повідомлення
-                        raise ValueError(f"Питання {i+1}: відповідь '{student_ans}' не є числом. Для тестових питань введіть число від 1 до {len(question_options)}")
+                        # Перевіряємо, що всі літери учня є валідними
+                        invalid_letters = [letter for letter in student_letters if letter not in valid_letters]
+                        if invalid_letters:
+                            raise ValueError(f"Питання {i+1}: літери '{', '.join(invalid_letters)}' не підходять. Доступні літери: {', '.join(valid_letters)}")
+                        
+                        # Перевіряємо, що всі правильні літери присутні у відповіді учня
+                        is_correct = set(student_letters) == set(correct_letters)
+                        student_ans_int = student_ans_normalized
+                    else:
+                        # Одиночний вибір
+                        if student_ans_normalized not in valid_letters:
+                            raise ValueError(f"Питання {i+1}: літера '{student_ans}' не підходить. Доступні літери: {', '.join(valid_letters)}")
+                        
+                        is_correct = student_ans_normalized == correct_ans_normalized
+                        student_ans_int = student_ans_normalized
             else:
                 # Відкрите завдання - порівнюємо рядки з нормалізацією
                 # Перевіряємо чи відповідь не порожня
@@ -1234,13 +1297,9 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 options_para = doc.add_paragraph()
                 options_para.add_run('Варіанти відповідей:').bold = True
                 
-                student_answer_num = None
-                correct_answer_num = None
-                try:
-                    student_answer_num = int(result['student_answer'])
-                    correct_answer_num = int(result['correct_answer'])
-                except (ValueError, TypeError):
-                    pass
+                # Для тестових питань відповіді можуть бути українськими літерами
+                student_answer_str = str(result['student_answer']).strip().upper()
+                correct_answer_str = str(result['correct_answer']).strip().upper()
                 
                 for j, option in enumerate(question_options, 1):
                     # Форматируем число правильно, используя ту же логику что и при генерации
@@ -1255,15 +1314,20 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                             except (ValueError, TypeError):
                                 return str(value).strip()
                         else:
-                            # Для строковых значений пытаемся преобразовать в число
+                            # Для строковых значений проверяем, является ли это украинской буквой
+                            str_value = str(value).strip()
+                            ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                            if str_value.upper() in ukrainian_letters:
+                                return str_value.upper()
+                            # Пытаемся преобразовать в число только если это не украинская буква
                             try:
-                                num_value = float(str(value).replace(',', '.'))
+                                num_value = float(str_value.replace(',', '.'))
                                 if num_value == int(num_value):
                                     return str(int(num_value))
                                 else:
                                     return f"{num_value:.10g}".replace('.', ',')
                             except (ValueError, TypeError):
-                                return str(value).strip()
+                                return str_value
                     
                     formatted_option = format_option_value(option)
                     
@@ -1276,13 +1340,17 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     # Добавляем информацию о выборе ученика и правильном ответе
                     status_text = ''
                     status_color = None
-                    if j == student_answer_num and j == correct_answer_num:
+                    
+                    # Перетворюємо номер варіанту на українську літеру
+                    option_letter = ['А', 'Б', 'В', 'Г'][j-1] if j <= 4 else str(j)
+                    
+                    if option_letter == student_answer_str and option_letter == correct_answer_str:
                         status_text = ' (Учень відповів - ПРАВИЛЬНО)'
                         status_color = RGBColor(0, 128, 0)  # Зеленый
-                    elif j == student_answer_num:
+                    elif option_letter == student_answer_str:
                         status_text = ' (Учень відповів - НЕПРАВИЛЬНО)'
                         status_color = RGBColor(255, 0, 0)  # Красный
-                    elif j == correct_answer_num:
+                    elif option_letter == correct_answer_str:
                         status_text = ' (Правильна відповідь)'
                         status_color = RGBColor(0, 128, 0)  # Зеленый
                     
@@ -1312,15 +1380,20 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                         except (ValueError, TypeError):
                             return str(value).strip()
                     else:
-                        # Для строковых значений пытаемся преобразовать в число
+                        # Для строковых значений проверяем, является ли это украинской буквой
+                        str_value = str(value).strip()
+                        ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                        if str_value.upper() in ukrainian_letters:
+                            return str_value.upper()
+                        # Пытаемся преобразовать в число только если это не украинская буква
                         try:
-                            num_value = float(str(value).replace(',', '.'))
+                            num_value = float(str_value.replace(',', '.'))
                             if num_value == int(num_value):
                                 return str(int(num_value))
                             else:
                                 return f"{num_value:.10g}".replace('.', ',')
                         except (ValueError, TypeError):
-                            return str(value).strip()
+                            return str_value
                 
                 formatted_student = format_answer_value(student_answer)
                 formatted_correct = format_answer_value(correct_answer)
@@ -1493,15 +1566,20 @@ def format_option_value(value):
         except (ValueError, TypeError):
             return str(value).strip()
     else:
-        # Для строковых значений пытаемся преобразовать в число
+        # Для строковых значений проверяем, является ли это украинской буквой
+        str_value = str(value).strip()
+        ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+        if str_value.upper() in ukrainian_letters:
+            return str_value.upper()
+        # Пытаемся преобразовать в число только если это не украинская буква
         try:
-            num_value = float(str(value).replace(',', '.'))
+            num_value = float(str_value.replace(',', '.'))
             if num_value == int(num_value):
                 return str(int(num_value))
             else:
                 return f"{num_value:.10g}".replace('.', ',')
         except (ValueError, TypeError):
-            return str(value).strip()
+            return str_value
 
 def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: int = 1, input_file_name: str = "", answer_format: str = "list", space_optimization: bool = False, test_class: str = "", test_date: str = "") -> str:
     """Создать Word документ с тестами для всех вариантов
@@ -1604,21 +1682,27 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                         
                         # Заполняем ячейки вариантами ответов
                         cells = table.rows[0].cells
+                        # Українські літери без Ґ, Є, І, Ї, Й, Ь
+                        ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
                         for j, option in enumerate(options):
                             # Форматируем числовые значения правильно
                             formatted_option = format_option_value(option)
                             # Очищаем ячейку и добавляем форматированный текст
                             cells[j].text = ""
                             para = cells[j].paragraphs[0]
-                            add_formatted_text_to_paragraph(para, f"{j + 1}) {formatted_option}")
+                            letter = ukrainian_letters[j] if j < len(ukrainian_letters) else str(j + 1)
+                            add_formatted_text_to_paragraph(para, f"{letter}) {formatted_option}")
                             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     else:
                         # Списочный формат - обычные варианты ответов
-                        for j, option in enumerate(question['options'], 1):
+                        # Українські літери без Ґ, Є, І, Ї, Й, Ь
+                        ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                        for j, option in enumerate(question['options']):
                             # Форматируем числовые значения правильно
                             formatted_option = format_option_value(option)
                             option_para = doc.add_paragraph()
-                            add_formatted_text_to_paragraph(option_para, f"   {j}) {formatted_option}")
+                            letter = ukrainian_letters[j] if j < len(ukrainian_letters) else str(j + 1)
+                            add_formatted_text_to_paragraph(option_para, f"   {letter}) {formatted_option}")
                             option_para.style = 'Normal'
                 else:
                     # Нетестовое задание - место для ответа
@@ -1784,41 +1868,7 @@ def read_test_word(file_path: str) -> pd.DataFrame:
         # Приводимо стовпець correct_answer до object типу для уникнення попереджень
         df['correct_answer'] = df['correct_answer'].astype('object')
         
-        # Для тестових завдань перевіряємо правильні відповіді
-        test_mask = df['is_test_question']
-        if test_mask.any():
-            # Спочатку перетворюємо в числа для валідації
-            numeric_answers = pd.to_numeric(df.loc[test_mask, 'correct_answer'], errors='coerce')
-            
-            # Перевіряємо чи правильна відповідь є числом
-            invalid_numeric_mask = test_mask & numeric_answers.isna()
-            if invalid_numeric_mask.any():
-                invalid_questions = df[invalid_numeric_mask][['question_number', 'question', 'correct_answer']].values.tolist()
-                error_details = []
-                for q_num, q_text, answer in invalid_questions[:5]:  # Показуємо перші 5 помилок
-                    error_details.append(f"Питання {q_num}: '{q_text[:50]}...' - некоректна відповідь '{answer}'")
-                error_msg = f"Знайдено тестові завдання з некоректними відповідями (повинні бути числами):\n" + "\n".join(error_details)
-                if len(invalid_questions) > 5:
-                    error_msg += f"\n... та ще {len(invalid_questions) - 5} питань"
-                raise ValueError(error_msg)
-            
-            # Перевіряємо чи правильна відповідь існує серед варіантів
-            for idx in df[test_mask].index:
-                answer_num = int(numeric_answers.loc[idx])
-                option_count = df.loc[idx, 'option_count']
-                
-                if answer_num < 1 or answer_num > option_count:
-                    q_num = df.loc[idx, 'question_number']
-                    q_text = df.loc[idx, 'question']
-                    raise ValueError(f"Питання {q_num}: '{q_text[:50]}...' - правильна відповідь {answer_num} не існує серед варіантів (доступно варіантів: {option_count})")
-            
-            # Форматуємо правильні відповіді для тестових завдань (прибираємо .0 для цілих чисел)
-            for idx in df[test_mask].index:
-                answer_value = numeric_answers.loc[idx]
-                if answer_value == int(answer_value):
-                    df.at[idx, 'correct_answer'] = str(int(answer_value))
-                else:
-                    df.at[idx, 'correct_answer'] = str(answer_value)
+        # Правильні відповіді для тестових завдань вже оброблені вище (рядки 330-370)
         
         # Для відкритих завдань зберігаємо правильну відповідь як текст
         open_mask = ~df['is_test_question']
