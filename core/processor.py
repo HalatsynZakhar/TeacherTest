@@ -308,9 +308,15 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Перевіряємо обов'язкове заповнення правильної відповіді
         missing_answers = df['correct_answer'].isna() | (df['correct_answer'] == 'nan') | (df['correct_answer'].astype(str).str.strip() == '')
         if missing_answers.any():
-            missing_questions = df[missing_answers]['question'].tolist()
-            log.warning(f"Найдены вопросы без правильного ответа: {missing_questions[:3]}{'...' if len(missing_questions) > 3 else ''}")
-            df = df[~missing_answers]  # Видаляємо питання без правильної відповіді
+            missing_questions = df[missing_answers][['question_number', 'question']].values.tolist()
+            error_details = []
+            for q_num, q_text in missing_questions[:5]:  # Показуємо перші 5 помилок
+                error_details.append(f"Питання {q_num}: '{q_text[:50]}...'")
+            error_msg = f"Знайдено питання без правильної відповіді:\n" + "\n".join(error_details)
+            if len(missing_questions) > 5:
+                error_msg += f"\n... та ще {len(missing_questions) - 5} питань"
+            error_msg += "\n\nВсі питання повинні мати правильну відповідь."
+            raise ValueError(error_msg)
         
         # Перевіряємо тестові питання з недостатньою кількістю варіантів відповіді
         test_questions_mask = ~df['task_type'].str.lower().isin(['відкрите', 'відкрите питання', 'вп'])
@@ -328,6 +334,33 @@ def read_test_excel(file_path: str) -> pd.DataFrame:
         # Визначаємо тип завдання на основі колонки task_type
         df['is_test_question'] = ~df['task_type'].str.lower().isin(['відкрите', 'відкрите питання', 'вп']) & df['correct_answer'].notna() & (df['correct_answer'] != 'nan')
         df['is_multiple_choice'] = df['task_type'].str.lower().isin(['тест м', 'тестове з декількома варіантами відповіді', 'тестове завдання з декількома варіантами відповіді', 'тк'])
+        
+        # Строга валідація типів завдань - всі питання повинні мати розпізнаний тип
+        valid_task_types = [
+            'відкрите', 'відкрите питання', 'вп',  # Відкриті завдання
+            'тест', 'тестове', 'тестове завдання', 'то',  # Тестові завдання з одним варіантом
+            'тест м', 'тестове з декількома варіантами відповіді', 'тестове завдання з декількома варіантами відповіді', 'тк'  # Тестові завдання з кількома варіантами
+        ]
+        
+        # Перевіряємо чи всі типи завдань розпізнані
+        unrecognized_mask = ~df['task_type'].str.lower().isin(valid_task_types)
+        if unrecognized_mask.any():
+            unrecognized_questions = df[unrecognized_mask][['question_number', 'question', 'task_type']].values.tolist()
+            error_details = []
+            for q_num, q_text, task_type in unrecognized_questions[:5]:  # Показуємо перші 5 помилок
+                error_details.append(f"Питання {q_num}: '{q_text[:50]}...' - невідомий тип завдання: '{task_type}'")
+            
+            valid_types_str = "\n".join([
+                "Відкриті завдання: 'відкрите', 'відкрите питання', 'вп'",
+                "Тестові завдання (один варіант): 'тест', 'тестове', 'тестове завдання', 'то'",
+                "Тестові завдання (кілька варіантів): 'тест м', 'тестове з декількома варіантами відповіді', 'тестове завдання з декількома варіантами відповіді', 'тк'"
+            ])
+            
+            error_msg = f"Знайдено питання з невизначеними типами завдань:\n" + "\n".join(error_details)
+            if len(unrecognized_questions) > 5:
+                error_msg += f"\n... та ще {len(unrecognized_questions) - 5} питань"
+            error_msg += f"\n\nДоступні типи завдань:\n{valid_types_str}"
+            raise ValueError(error_msg)
         
         # Приводимо стовпець correct_answer до object типу для уникнення попереджень
         df['correct_answer'] = df['correct_answer'].astype('object')
@@ -416,11 +449,11 @@ def _process_optional_questions(df: pd.DataFrame) -> pd.DataFrame:
     for question_num, group in question_groups:
         if len(group) > 1:
             # Якщо є кілька питань з одним номером, вибираємо випадковий
-            selected_question = group.sample(n=1)
+            selected_question = group.sample(n=1).copy()
             log.info(f"Для номера питання {question_num} обрано випадковий варіант з {len(group)} доступних")
         else:
             # Якщо питання одне, просто беремо його
-            selected_question = group
+            selected_question = group.copy()
         
         selected_questions.append(selected_question)
     
@@ -446,12 +479,11 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
     Returns:
         Список словників з варіантами тестів
     """
-    # Обробляємо опціональні питання (коли номери повторюються)
-    processed_df = _process_optional_questions(df)
-    
     variants = []
     
     for variant_num in range(1, num_variants + 1):
+        # Обробляємо опціональні питання для кожного варіанту окремо
+        processed_df = _process_optional_questions(df)
         variant = {
             'variant_number': variant_num,
             'questions': [],
@@ -493,8 +525,7 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
                             options.append(str(value).strip())
                 
                 if len(options) < 2:
-                    log.warning(f"Тестове питання '{row['question']}' має менше 2 варіантів відповідей, пропускаємо")
-                    continue
+                    raise ValueError(f"Тестове питання '{row['question'][:50]}...' має менше 2 варіантів відповідей. Тестові питання повинні мати мінімум 2 варіанти відповіді.")
                 
                 # Перевіряємо коректність правильної відповіді
                 correct_answer_str = str(row['correct_answer']).strip().upper()
@@ -522,8 +553,7 @@ def generate_test_variants(df: pd.DataFrame, num_variants: int, question_shuffle
                             pass
                 
                 if not correct_answer_indices:
-                    log.warning(f"Некоректна правильна відповідь '{row['correct_answer']}' для питання '{row['question']}', пропускаємо")
-                    continue
+                    raise ValueError(f"Некоректна правильна відповідь '{row['correct_answer']}' для питання '{row['question'][:50]}...'. Правильна відповідь повинна містити літери А-Я або числа 1-{len(options)}.")
                 
                 # Перемішуємо варіанти відповідей залежно від режиму
                 if answer_shuffle_mode == 'random':
