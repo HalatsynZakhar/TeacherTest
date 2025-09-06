@@ -1852,66 +1852,33 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 if not space_optimization:
                     doc.add_paragraph()  # Пустая строка между вопросами
             
-            # Таблица для ответов - сразу после теста, без разрыва страницы
-            # Всегда по 15 элементов в строке, последняя строка дополняется пустыми ячейками
-            doc.add_paragraph("Таблиця відповідей:")
+            # Рядки для відповідей - по 6 завдань у рядку
+            answers_paragraph = doc.add_paragraph()
+            answers_run = answers_paragraph.add_run("Відповіді:")
+            answers_run.bold = True
             
             total_questions = len(variant['questions'])
-            questions_per_row = 15  # Всегда 15 элементов в строке
-            num_rows = (total_questions + questions_per_row - 1) // questions_per_row  # Округление вверх
+            questions_per_row = 6  # По 6 завдань у рядку
+            num_rows = (total_questions + questions_per_row - 1) // questions_per_row  # Округлення вгору
             
             current_q = 0
             for row_idx in range(num_rows):
-                # Всегда создаем строку с 15 колонками
-                cols_in_row = questions_per_row
-                
-                # Создаем таблицу для текущей строки
-                table = doc.add_table(rows=2, cols=cols_in_row)
-                table.style = 'Table Grid'
-                
-                # Растягиваем таблицу по всей странице
-                table.autofit = False
-                for col in table.columns:
-                    col.width = Inches(6.5 / cols_in_row)
-                
-                # Заголовки (номера вопросов)
-                header_cells = table.rows[0].cells
-                for i in range(cols_in_row):
+                # Створюємо рядок з номерами завдань та місцями для відповідей
+                row_text = ""
+                for i in range(questions_per_row):
                     if current_q < total_questions:
-                        header_cells[i].text = str(current_q + 1)
+                        # Резервуємо два символи для номера завдання
+                        question_num = f"{current_q + 1:2d}"
+                        row_text += f"{question_num}. _________________ "
                         current_q += 1
-                        header_cells[i].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     else:
-                        # Пустая ячейка без рамок
-                        header_cells[i].text = ""
-                        # Убираем рамки для пустых ячеек
-                        from docx.oxml.shared import qn
-                        tc = header_cells[i]._tc
-                        tcPr = tc.get_or_add_tcPr()
-                        tcBorders = tcPr.find(qn('w:tcBorders'))
-                        if tcBorders is None:
-                            tcBorders = parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>')
-                            tcPr.append(tcBorders)
+                        # Додаємо пробіли для вирівнювання, якщо завдань менше 6
+                        row_text += "                                   "
                 
-                # Пустая строка для ответов
-                answer_cells = table.rows[1].cells
-                for i, cell in enumerate(answer_cells):
-                    if i < total_questions - (row_idx * questions_per_row):
-                        cell.text = ""
-                    else:
-                        # Пустая ячейка без рамок
-                        cell.text = ""
-                        from docx.oxml.shared import qn
-                        tc = cell._tc
-                        tcPr = tc.get_or_add_tcPr()
-                        tcBorders = tcPr.find(qn('w:tcBorders'))
-                        if tcBorders is None:
-                            tcBorders = parse_xml('<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>')
-                            tcPr.append(tcBorders)
+                # Додаємо параграф з рядком відповідей
+                answer_para = doc.add_paragraph(row_text.rstrip())
+                answer_para.style = 'Normal'
                 
-                # Добавляем небольшой отступ между строками таблиц
-                if row_idx < num_rows - 1 and not space_optimization:
-                    doc.add_paragraph()
             
             # Разрыв страницы между вариантами (кроме последнего)
             if variant != variants[-1]:
