@@ -23,6 +23,27 @@ def format_number_with_comma(number: float, decimals: int = 1) -> str:
     return formatted.replace('.', ',')
 
 
+def get_task_type_indicator(question: Dict[str, Any]) -> str:
+    """Повертає індикатор типу завдання для питання
+    
+    Args:
+        question: Словник з даними питання
+        
+    Returns:
+        Рядок з індикатором типу завдання
+    """
+    if question.get('is_test_question', True):
+        # Тестове питання - перевіряємо кількість правильних відповідей
+        correct_answer = question.get('correct_answer', '')
+        if isinstance(correct_answer, str) and len(correct_answer.split(',')) > 1:
+            return "(Виберіть всі правильні відповіді)"
+        else:
+            return "(Виберіть одну правильну відповідь)"
+    else:
+        # Відкрите питання
+        return "(Запишіть відповідь)"
+
+
 def process_math_formulas(text: str) -> str:
     """Обробляє математичні формули в тексті та конвертує їх у LaTeX формат
     
@@ -976,8 +997,12 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                         if invalid_letters:
                             raise ValueError(f"Питання {i+1}: літери '{', '.join(invalid_letters)}' не підходять. Доступні літери: {', '.join(valid_letters)}")
                         
-                        # Перевіряємо, що всі правильні літери присутні у відповіді учня
-                        is_correct = set(student_letters) == set(correct_letters)
+                        # Множинний вибір - строга перевірка точної відповідності
+                        student_set = set(student_letters)
+                        correct_set = set(correct_letters)
+                        
+                        # Бінарне оцінювання: або повністю правильно, або 0 балів
+                        is_correct = student_set == correct_set
                         student_ans_int = student_ans_normalized
                     else:
                         # Одиночний вибір
@@ -999,8 +1024,10 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                     is_correct = student_str == correct_str
                     student_ans_int = student_ans
             
-            if is_correct:
-                correct_weighted_score += question_points
+            # Підраховуємо бали - бінарне оцінювання
+            earned_points = question_points if is_correct else 0
+            
+            correct_weighted_score += earned_points
             
             result_item = {
                 'question_number': i + 1,
@@ -1008,7 +1035,7 @@ def check_student_answers(answer_key_file: str, variant_number: int, student_ans
                 'correct_answer': correct_ans,
                 'is_correct': is_correct,
                 'weight': weight,
-                'points': question_points if is_correct else 0,
+                'points': earned_points,
                 'max_points': question_points,
                 'is_test_question': is_test_question,
                 'question_text': question_text,
@@ -1310,16 +1337,23 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             
 
             
-            # Тип вопроса
+            # Тип вопроса з індикатором
             question_type = result.get('question_type', 'Невідомий')
             if not question_type and result.get('is_test_question'):
                 question_type = 'Тестове'
             elif not question_type:
                 question_type = 'Відкрите'
             
+            # Створюємо об'єкт питання для get_task_type_indicator
+            question_obj = {
+                'is_test_question': result.get('is_test_question', True),
+                'correct_answer': result.get('correct_answer', '')
+            }
+            task_indicator = get_task_type_indicator(question_obj)
+            
             type_para = doc.add_paragraph()
             type_para.add_run('Тип питання: ').bold = True
-            type_para.add_run(question_type)
+            type_para.add_run(f"{question_type} {task_indicator}")
             
             # Варианты ответов для тестовых вопросов
             question_options = result.get('question_options', [])
@@ -1330,6 +1364,10 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 # Для тестових питань відповіді можуть бути українськими літерами
                 student_answer_str = str(result['student_answer']).strip().upper()
                 correct_answer_str = str(result['correct_answer']).strip().upper()
+                
+                # Перевіряємо чи відповідь порожня (не заповнено)
+                if student_answer_str == "(НЕ ЗАПОВНЕНО)":
+                    student_answer_str = ""
                 
                 for j, option in enumerate(question_options, 1):
                     # Форматируем число правильно, используя ту же логику что и при генерации
@@ -1371,18 +1409,37 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     status_text = ''
                     status_color = None
                     
-                    # Перетворюємо номер варіанту на українську літеру
-                    option_letter = ['А', 'Б', 'В', 'Г'][j-1] if j <= 4 else str(j)
+                    # Перетворюємо номер варіанту на українську літеру або номер
+                    ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
+                    option_letter = ukrainian_letters[j-1] if j <= len(ukrainian_letters) else str(j)
                     
-                    if option_letter == student_answer_str and option_letter == correct_answer_str:
-                        status_text = ' (Учень відповів - ПРАВИЛЬНО)'
+                    # Перевіряємо чи цей варіант обрав учень або чи це правильна відповідь
+                    is_student_choice = False
+                    is_correct_choice = False
+                    
+                    # Для множинного вибору перевіряємо кожну літеру окремо
+                    if len(student_answer_str) > 1:  # Множинний вибір
+                        is_student_choice = option_letter in student_answer_str
+                    else:  # Одиночний вибір
+                        is_student_choice = option_letter == student_answer_str
+                    
+                    if len(correct_answer_str) > 1:  # Множинний вибір
+                        is_correct_choice = option_letter in correct_answer_str
+                    else:  # Одиночний вибір
+                        is_correct_choice = option_letter == correct_answer_str
+                    
+                    if is_student_choice and is_correct_choice:
+                        status_text = ' ✓ (Учень відповів - ПРАВИЛЬНО)'
                         status_color = RGBColor(0, 128, 0)  # Зеленый
-                    elif option_letter == student_answer_str:
-                        status_text = ' (Учень відповів - НЕПРАВИЛЬНО)'
+                    elif is_student_choice and not is_correct_choice:
+                        status_text = ' ✗ (Учень відповів - НЕПРАВИЛЬНО)'
                         status_color = RGBColor(255, 0, 0)  # Красный
-                    elif option_letter == correct_answer_str:
-                        status_text = ' (Правильна відповідь)'
-                        status_color = RGBColor(0, 128, 0)  # Зеленый
+                    elif not is_student_choice and is_correct_choice:
+                        status_text = ' ✓ (Правильна відповідь)'
+                        status_color = RGBColor(255, 0, 0)  # Красный
+                    else:
+                        status_text = ''
+                        status_color = None
                     
                     if status_text:
                         status_run = option_para.add_run(status_text)
@@ -1674,18 +1731,22 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                 else:
                     points_str = f"({format_number_with_comma(question_points, 1)} балів)"
                 
+                # Додаємо індикатор типу завдання
+                task_type_indicator = get_task_type_indicator(question)
+                points_and_type_str = f"{points_str} {task_type_indicator}"
+                
                 if space_optimization:
                     # В компактном режиме - номер, баллы и текст вопроса в одной строке
                     question_para = doc.add_paragraph()
                     # Добавляем номер и баллы жирным шрифтом
-                    run1 = question_para.add_run(f"{i}. {points_str} ")
+                    run1 = question_para.add_run(f"{i}. {points_and_type_str} ")
                     run1.bold = True
                     # Добавляем текст вопроса с обработкой математических формул
                     add_formatted_text_to_paragraph(question_para, question['question_text'])
                     question_para.style = 'Normal'
                 else:
                     # В обычном режиме - номер и баллы отдельно от текста вопроса
-                    question_header = doc.add_paragraph(f"{i}. {points_str}")
+                    question_header = doc.add_paragraph(f"{i}. {points_and_type_str}")
                     question_header.runs[0].bold = True
                     
                     # Текст вопроса отдельной строкой с обработкой математических формул
