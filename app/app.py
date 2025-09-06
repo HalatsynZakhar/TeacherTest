@@ -33,6 +33,7 @@ from core.processor import (
     create_test_word,
     read_test_word,
     export_answers_to_word,
+    export_short_answers_to_word,
     generate_test_template,
     generate_neural_query_document,
     save_student_result_to_excel
@@ -399,6 +400,13 @@ def save_all_tests():
             shutil.copy2(st.session_state.output_files['answers_word'], final_path)
             saved_files.append(f"Відповіді: {filename}")
         
+        # Зберігаємо Word файл зі скороченими відповідями
+        if 'short_answers_word' in st.session_state.output_files and os.path.exists(st.session_state.output_files['short_answers_word']):
+            filename = os.path.basename(st.session_state.output_files['short_answers_word'])
+            final_path = os.path.join(st.session_state.save_tests_path, filename)
+            shutil.copy2(st.session_state.output_files['short_answers_word'], final_path)
+            saved_files.append(f"Скорочені відповіді: {filename}")
+        
         if saved_files:
             st.success(f"✅ Всі файли тестів збережено успішно в папку: {st.session_state.save_tests_path}\n\n" +
                       "\n".join(saved_files))
@@ -517,11 +525,16 @@ def generate_tests():
         answers_word_path = export_answers_to_word(variants, output_dir, st.session_state.input_file_name, st.session_state.test_class, st.session_state.test_date)
         add_log_message(f"Створено Word файл з відповідями")
         
+        # Створюємо Word файл зі скороченими відповідями
+        short_answers_word_path = export_short_answers_to_word(variants, output_dir, st.session_state.input_file_name, st.session_state.test_class, st.session_state.test_date)
+        add_log_message(f"Створено Word файл зі скороченими відповідями")
+        
         # Зберігаємо шляхи до файлів
         st.session_state.output_files = {
             'excel_key': excel_key_path,
             'test_word': test_word_path,
-            'answers_word': answers_word_path
+            'answers_word': answers_word_path,
+            'short_answers_word': short_answers_word_path
         }
         
         add_log_message("Генерація тестів завершена успішно", "SUCCESS")
@@ -872,7 +885,7 @@ def main():
                 save_all_tests()
             
             st.markdown("### 📋 Окремі файли")
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             # Тесты для учеников (Word)
             with col1:
@@ -906,6 +919,18 @@ def main():
                             label="📋 Відповіді Word",
                             data=file,
                             file_name=os.path.basename(st.session_state.output_files['answers_word']),
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+            
+            # Скорочені відповіді (Word)
+            with col4:
+                if os.path.exists(st.session_state.output_files['short_answers_word']):
+                    with open(st.session_state.output_files['short_answers_word'], "rb") as file:
+                        st.download_button(
+                            label="📄 Скорочені відповіді Word",
+                            data=file,
+                            file_name=os.path.basename(st.session_state.output_files['short_answers_word']),
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             use_container_width=True
                         )

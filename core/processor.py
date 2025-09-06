@@ -2128,6 +2128,66 @@ def export_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, inpu
         log.error(f"Помилка при експорті відповідей в Word: {e}")
         raise
 
+
+def export_short_answers_to_word(variants: List[Dict[str, Any]], output_dir: str, input_file_name: str = "", test_class: str = "", test_date: str = "") -> str:
+    """Экспортировать краткие ответы всех вариантов в Word документ в виде нумерованного списка
+    
+    Args:
+        variants: Список вариантов тестов
+        output_dir: Папка для сохранения файлов
+        input_file_name: Имя входного файла
+        test_class: Класс для отображения в заголовке (опционально)
+        test_date: Дата теста для отображения в заголовке (опционально)
+    """
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        if input_file_name:
+            word_path = os.path.join(output_dir, f"{input_file_name}_Скорочені_відповіді_{timestamp}.docx")
+        else:
+            word_path = os.path.join(output_dir, f"short_answers_{timestamp}.docx")
+        
+        doc = Document()
+        
+        # Устанавливаем минимальные поля для экономии места
+        section = doc.sections[0]
+        section.top_margin = Inches(0.5)     # 1.27 см
+        section.bottom_margin = Inches(0.5)  # 1.27 см
+        section.left_margin = Inches(0.5)    # 1.27 см
+        section.right_margin = Inches(0.5)   # 1.27 см
+        
+        # Удалено: заголовок и инструкция для компактности
+        
+        for variant in variants:
+            # Заголовок варианта
+            variant_header = doc.add_paragraph()
+            variant_header.add_run(f'Варіант {variant["variant_number"]}').bold = True
+            variant_header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Создаем нумерованный список ответов
+            for i, answer in enumerate(variant['answer_key'], 1):
+                answer_para = doc.add_paragraph()
+                answer_para.add_run(f'{i}. {answer}')
+                # Минимальные отступы для компактности
+                answer_para.paragraph_format.space_before = 0
+                answer_para.paragraph_format.space_after = 0
+                answer_para.paragraph_format.line_spacing = 1.0
+            
+            # Мінімальний відступ між варіантами
+            if variant != variants[-1]:  # Не додаємо відступ після останнього варіанту
+                spacing_para = doc.add_paragraph()
+                spacing_para.paragraph_format.space_before = 0
+                spacing_para.paragraph_format.space_after = 0
+                spacing_para.paragraph_format.line_spacing = 0.5
+        
+        doc.save(word_path)
+        log.info(f"Word документ зі скороченими відповідями створено: {word_path}")
+        return word_path
+        
+    except Exception as e:
+        log.error(f"Помилка при експорті скорочених відповідей в Word: {e}")
+        raise
+
 def generate_test_template(output_dir: str) -> str:
     """
     Генерує Excel шаблон для тестів.
