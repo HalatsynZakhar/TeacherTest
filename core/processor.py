@@ -1369,7 +1369,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                 # Додаємо світло-сірі границі таблиці
                 for row in table.rows:
                      for cell in row.cells:
-                         cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>'))
+                         cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:left w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:right w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/></w:tcBorders>'))
                 
                 # Для тестових питань відповіді можуть бути українськими літерами
                 student_answer_str = str(result['student_answer']).strip().upper()
@@ -1464,7 +1464,7 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     
                     # Додаємо світло-сірі границі для нового рядка
                     for cell in row_cells:
-                        cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>'))
+                        cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:left w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/><w:right w:val="single" w:sz="4" w:space="0" w:color="F2F2F2"/></w:tcBorders>'))
                 
                 # Видаляємо перший порожній рядок
                 table._element.remove(table.rows[0]._element)
