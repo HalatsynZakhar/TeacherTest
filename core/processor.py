@@ -34,9 +34,10 @@ def get_task_type_indicator(question: Dict[str, Any]) -> str:
     """
     if question.get('is_test_question', True):
         # Тестове питання - перевіряємо кількість правильних відповідей
-        correct_answer = question.get('correct_answer', '')
-        if isinstance(correct_answer, str) and len(correct_answer.split(',')) > 1:
-            return "(Виберіть всі правильні відповіді)"
+        correct_answer = str(question.get('correct_answer', '')).strip().upper()
+        # Перевіряємо чи є кілька літер у відповіді (множинний вибір)
+        if len(correct_answer) > 1 or (isinstance(question.get('correct_answer', ''), str) and ',' in question.get('correct_answer', '')):
+            return "(Виберіть декілька правильних відповідей)"
         else:
             return "(Виберіть одну правильну відповідь)"
     else:
@@ -1355,11 +1356,20 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
             type_para.add_run('Тип питання: ').bold = True
             type_para.add_run(f"{question_type} {task_indicator}")
             
-            # Варианты ответов для тестовых вопросов
+            # Варианты ответов для тестовых вопросов в виде трьохколонкової таблиці
             question_options = result.get('question_options', [])
             if question_options and result.get('is_test_question'):
                 options_para = doc.add_paragraph()
                 options_para.add_run('Варіанти відповідей:').bold = True
+                
+                # Створюємо таблицю без рамок з трьома колонками
+                table = doc.add_table(rows=1, cols=3)
+                table.style = 'Table Grid'
+                
+                # Додаємо світло-сірі границі таблиці
+                for row in table.rows:
+                     for cell in row.cells:
+                         cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>'))
                 
                 # Для тестових питань відповіді можуть бути українськими літерами
                 student_answer_str = str(result['student_answer']).strip().upper()
@@ -1399,19 +1409,15 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     
                     formatted_option = format_option_value(option)
                     
-                    option_para = doc.add_paragraph()
-                    option_text_base = f'{j}. {formatted_option}'
-                    
-                    # Добавляем базовый текст с математическими формулами
-                    add_formatted_text_to_paragraph(option_para, option_text_base)
-                    
-                    # Добавляем информацию о выборе ученика и правильном ответе
-                    status_text = ''
-                    status_color = None
+                    # Додаємо рядок до таблиці
+                    row_cells = table.add_row().cells
                     
                     # Перетворюємо номер варіанту на українську літеру або номер
                     ukrainian_letters = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Ю', 'Я']
                     option_letter = ukrainian_letters[j-1] if j <= len(ukrainian_letters) else str(j)
+                    
+                    # Перша колонка: номер завдання і варіант
+                    row_cells[0].text = f'{option_letter}. {formatted_option}'
                     
                     # Перевіряємо чи цей варіант обрав учень або чи це правильна відповідь
                     is_student_choice = False
@@ -1428,24 +1434,67 @@ def create_check_result_word(check_result: Dict[str, Any], output_dir: str) -> s
                     else:  # Одиночний вибір
                         is_correct_choice = option_letter == correct_answer_str
                     
-                    if is_student_choice and is_correct_choice:
-                        status_text = ' ✓ (Учень відповів - ПРАВИЛЬНО)'
-                        status_color = RGBColor(0, 128, 0)  # Зеленый
-                    elif is_student_choice and not is_correct_choice:
-                        status_text = ' ✗ (Учень відповів - НЕПРАВИЛЬНО)'
-                        status_color = RGBColor(255, 0, 0)  # Красный
-                    elif not is_student_choice and is_correct_choice:
-                        status_text = ' ✓ (Правильна відповідь)'
-                        status_color = RGBColor(255, 0, 0)  # Красный
+                    # Друга колонка: вибір учня (без кольорових виділень)
+                    if is_student_choice:
+                        row_cells[1].text = '✓ Обрано'
                     else:
-                        status_text = ''
-                        status_color = None
+                        row_cells[1].text = ''
                     
-                    if status_text:
-                        status_run = option_para.add_run(status_text)
-                        if status_color:
-                            status_run.font.color.rgb = status_color
-                            status_run.bold = True
+                    # Третя колонка: позначка правильних і неправильних відповідей (з кольором)
+                    if is_student_choice and is_correct_choice:
+                        # Правильно обрано
+                        paragraph = row_cells[2].paragraphs[0]
+                        run = paragraph.add_run('✓ ПРАВИЛЬНО')
+                        run.font.color.rgb = RGBColor(0, 128, 0)  # Зелений
+                        run.bold = True
+                    elif is_student_choice and not is_correct_choice:
+                        # Неправильно обрано
+                        paragraph = row_cells[2].paragraphs[0]
+                        run = paragraph.add_run('✗ НЕПРАВИЛЬНО')
+                        run.font.color.rgb = RGBColor(255, 0, 0)  # Червоний
+                        run.bold = True
+                    elif not is_student_choice and is_correct_choice:
+                        # Правильна відповідь, але не обрана
+                        paragraph = row_cells[2].paragraphs[0]
+                        run = paragraph.add_run('✓ Правильна відповідь')
+                        run.font.color.rgb = RGBColor(0, 128, 0)  # Зелений
+                        run.bold = True
+                    else:
+                        row_cells[2].text = ''
+                    
+                    # Додаємо світло-сірі границі для нового рядка
+                    for cell in row_cells:
+                        cell._element.get_or_add_tcPr().append(parse_xml(r'<w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:top w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:left w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/><w:right w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/></w:tcBorders>'))
+                
+                # Видаляємо перший порожній рядок
+                table._element.remove(table.rows[0]._element)
+            
+            # Додаємо відображення відповідей для тестових питань
+            if result.get('is_test_question'):
+                answers_para = doc.add_paragraph()
+                
+                # Форматуємо відповіді учня та правильну відповідь
+                student_answer_display = str(result['student_answer']).strip()
+                correct_answer_display = str(result['correct_answer']).strip()
+                
+                # Перевіряємо чи відповідь порожня
+                if student_answer_display == "(НЕ ЗАПОВНЕНО)" or student_answer_display == "":
+                    student_answer_display = "(не заповнено)"
+                
+                answers_para.add_run('Відповіді: ').bold = True
+                answers_para.add_run('Учень відповів: ')
+                
+                student_run = answers_para.add_run(f'({student_answer_display})')
+                if result['is_correct']:
+                    student_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                else:
+                    student_run.font.color.rgb = RGBColor(255, 0, 0)  # Красный
+                student_run.bold = True
+                
+                answers_para.add_run(', правильна відповідь: ')
+                correct_run = answers_para.add_run(f'({correct_answer_display})')
+                correct_run.font.color.rgb = RGBColor(0, 128, 0)  # Зеленый
+                correct_run.bold = True
             
             # Для відкритих питань додаємо інформацію про відповіді
             if not result.get('is_test_question'):
