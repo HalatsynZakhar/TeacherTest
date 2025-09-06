@@ -1759,9 +1759,21 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             heading = doc.add_heading(" - ".join(title_parts), level=1)
             heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
+            # Настройка отступов для заголовка в режиме экономии места
+            if space_optimization:
+                heading.paragraph_format.space_before = Inches(0)
+                heading.paragraph_format.space_after = Inches(0.05)
+                heading.paragraph_format.line_spacing = 1.0
+            
             # Инструкция
             instruction = doc.add_paragraph("Інструкція: Оберіть правильну відповідь для кожного питання.")
             instruction.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # Настройка отступов для инструкции в режиме экономии места
+            if space_optimization:
+                instruction.paragraph_format.space_before = Inches(0)
+                instruction.paragraph_format.space_after = Inches(0.02)
+                instruction.paragraph_format.line_spacing = 1.0
             
             if not space_optimization:
                 doc.add_paragraph()  # Пустая строка
@@ -1793,6 +1805,10 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                     # Добавляем текст вопроса с обработкой математических формул
                     add_formatted_text_to_paragraph(question_para, question['question_text'])
                     question_para.style = 'Normal'
+                    # Минимальные отступы для вопросов
+                    question_para.paragraph_format.space_before = Inches(0)
+                    question_para.paragraph_format.space_after = Inches(0.02)
+                    question_para.paragraph_format.line_spacing = 1.0
                 else:
                     # В обычном режиме - номер и баллы отдельно от текста вопроса
                     question_header = doc.add_paragraph(f"{i}. {points_and_type_str}")
@@ -1844,10 +1860,20 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
                             letter = ukrainian_letters[j] if j < len(ukrainian_letters) else str(j + 1)
                             add_formatted_text_to_paragraph(option_para, f"   {letter}) {formatted_option}")
                             option_para.style = 'Normal'
+                            # Минимальные отступы для вариантов ответов в режиме экономии места
+                            if space_optimization:
+                                option_para.paragraph_format.space_before = Inches(0)
+                                option_para.paragraph_format.space_after = Inches(0.01)
+                                option_para.paragraph_format.line_spacing = 1.0
                 else:
                     # Нетестовое задание - место для ответа
                     answer_para = doc.add_paragraph("Відповідь: ___________________________")
                     answer_para.style = 'Normal'
+                    # Минимальные отступы для поля ответа в режиме экономии места
+                    if space_optimization:
+                        answer_para.paragraph_format.space_before = Inches(0)
+                        answer_para.paragraph_format.space_after = Inches(0.02)
+                        answer_para.paragraph_format.line_spacing = 1.0
                 
                 if not space_optimization:
                     doc.add_paragraph()  # Пустая строка между вопросами
@@ -1882,7 +1908,13 @@ def create_test_word(variants: List[Dict[str, Any]], output_dir: str, columns: i
             
             # Разрыв страницы между вариантами (кроме последнего)
             if variant != variants[-1]:
-                doc.add_page_break()
+                page_break = doc.add_page_break()
+                if space_optimization:
+                    # Мінімальні відступи для розриву сторінки в режимі економії місця
+                    page_break_format = page_break._element.getparent()
+                    if page_break_format is not None:
+                        page_break_format.set(qn('w:before'), '0')
+                        page_break_format.set(qn('w:after'), '0')
         
         doc.save(word_path)
         log.info(f"Word документ з тестами створено: {word_path}")
